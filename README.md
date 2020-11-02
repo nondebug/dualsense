@@ -36,7 +36,8 @@ Vendor ID: `0x054c`
 Product ID: `0x0ce6`  
 Product name: Wireless Controller
 
-HID report descriptor (273 bytes):
+[Parsed HID report descriptor](report-descriptor-usb.txt)  
+Raw HID report descriptor (273 bytes):
 
 ```
 05 01 09 05 a1 01 85 01 09 30 09 31 09 32 09 35
@@ -65,6 +66,7 @@ Vendor ID: `0x054c`
 Product ID: `0x0ce6`  
 Product name: Wireless Controller
 
+[Parsed HID report descriptor](report-descriptor-bluetooth.txt)  
 HID report descriptor (280 bytes):
 
 ```
