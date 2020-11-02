@@ -67,7 +67,7 @@ Product ID: `0x0ce6`
 Product name: Wireless Controller
 
 [Parsed HID report descriptor](report-descriptor-bluetooth.txt)  
-HID report descriptor (280 bytes):
+Raw HID report descriptor (280 bytes):
 
 ```
 05 01 09 05 a1 01 85 01 09 30 09 31 09 32 09 35
