@@ -1,0 +1,8 @@
+# UDEV rules to make Sony DualSense read/write on Linux.
+# To use, copy this file to /etc/udev/rules.d/99-sony-dualsense.rules and reconnect the controller.
+
+# Sony DualSense (USB)
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="054c", ATTRS{idProduct}=="0ce6", MODE="0666"
+
+# Sony DualSense (Bluetooth)
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", KERNELS=="0005:054C:0CE6.*", MODE="0666"
