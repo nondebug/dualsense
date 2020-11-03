@@ -36,6 +36,8 @@ Vendor ID: `0x054c`
 Product ID: `0x0ce6`  
 Product name: Wireless Controller
 
+[lsusb output](lsusb-descriptor-info.txt)
+
 [Parsed HID report descriptor](report-descriptor-usb.txt)  
 Raw HID report descriptor (273 bytes):
 
