@@ -2,6 +2,8 @@
 
 [Product page](https://www.playstation.com/en-us/accessories/dualsense-wireless-controller/)
 
+[DualSense explorer tool](dualsense-explorer.html)
+
 ## Inputs
 
 * Thumbsticks (analog): **Left stick**, **Right stick**
