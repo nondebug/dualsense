@@ -1,0 +1,588 @@
+<html>
+<head></head>
+<body>
+<button type="button" onclick="requestDevice()">Connect</button><br />
+<button type="button" onclick="dshid.readFeatureReport05()">Read feature report 0x05 (Bluetooth)</button><br />
+
+Connected device: <input type="text" id="productname" disabled /><br />
+VID:PID: <input type="text" id="vidpid" style="width:100;" disabled /><br />
+Connection type: <input type="text" id="connectiontype" style="width:100;" disabled /><br />
+
+<textarea id="inputreport" cols="48" rows="6" disabled></textarea><br />
+
+<input type="checkbox" id="buttoncross" disabled>Cross button</input><br />
+<input type="checkbox" id="buttoncircle" disabled>Circle button</input><br />
+<input type="checkbox" id="buttonsquare" disabled>Square button</input><br />
+<input type="checkbox" id="buttontriangle" disabled>Triangle button</input><br />
+
+<input type="checkbox" id="buttonl1" disabled>L1 button</input><br />
+<input type="checkbox" id="buttonr1" disabled>R1 button</input><br />
+<input type="checkbox" id="buttonl2" disabled/><input type="text" id="triggerl2" style="text-align:right; width:50;" disabled />L2 trigger<br />
+<input type="checkbox" id="buttonr2" disabled/><input type="text" id="triggerr2" style="text-align:right; width:50;" disabled />R2 trigger<br />
+
+<input type="checkbox" id="buttoncreate" disabled>Create button</input><br />
+<input type="checkbox" id="buttonoptions" disabled>Options button</input><br />
+<input type="checkbox" id="buttonl3" disabled>L3 button</input><br />
+<input type="checkbox" id="buttonr3" disabled>R3 button</input><br />
+
+<input type="checkbox" id="dpadup" disabled>Dpad up</input><br />
+<input type="checkbox" id="dpaddown" disabled>Dpad down</input><br />
+<input type="checkbox" id="dpadleft" disabled>Dpad left</input><br />
+<input type="checkbox" id="dpadright" disabled>Dpad right</input><br />
+
+<input type="checkbox" id="buttonps" disabled>PS button</input><br />
+<input type="checkbox" id="buttontouchpad" disabled>Touchpad button</input><br />
+<input type="checkbox" id="buttonmute" disabled>Mute button</input><br />
+
+<input type="text" id="leftstickx" style="text-align:right; width:50;" disabled />Left thumbstick X<br />
+<input type="text" id="leftsticky" style="text-align:right; width:50;" disabled />Left thumbstick Y<br />
+<input type="text" id="rightstickx" style="text-align:right; width:50;" disabled />Right thumbstick X<br />
+<input type="text" id="rightsticky" style="text-align:right; width:50;" disabled />Right thumbstick Y<br />
+
+<input type="checkbox" id="touch0active" disabled>Touchpoint 0 active</input><br />
+<input type="text" id="touch0id" style="text-align:right; width:50;" disabled />Touchpoint 0 ID<br />
+<input type="text" id="touch0x" style="text-align:right; width:50;" disabled />Touchpoint 0 X<br />
+<input type="text" id="touch0y" style="text-align:right; width:50;" disabled />Touchpoint 0 Y<br />
+<input type="checkbox" id="touch1active" disabled>Touchpoint 1 active</input><br />
+<input type="text" id="touch1id" style="text-align:right; width:50;" disabled />Touchpoint 1 ID<br />
+<input type="text" id="touch1x" style="text-align:right; width:50;" disabled />Touchpoint 1 X<br />
+<input type="text" id="touch1y" style="text-align:right; width:50;" disabled />Touchpoint 1 Y<br />
+
+<input type="checkbox" id="batterycharging" disabled>Charging</input><br />
+<input type="checkbox" id="batteryfull" disabled>Fully charged</input><br />
+<input type="text" id="batterylevel" style="text-align:right; width:50;" disabled />Battery level<br />
+<script>
+
+const VENDOR_ID_SONY = 0x054c;
+const PRODUCT_ID_DUAL_SENSE = 0x0ce6;
+
+const USAGE_PAGE_GENERIC_DESKTOP = 0x0001;
+const USAGE_ID_GD_GAME_PAD = 0x0005;
+
+// Expected report sizes, not including the report ID byte.
+const DUAL_SENSE_USB_INPUT_REPORT_0x01_SIZE = 63;
+const DUAL_SENSE_BT_INPUT_REPORT_0x01_SIZE = 9;
+const DUAL_SENSE_BT_INPUT_REPORT_0x31_SIZE = 77;
+
+const productNameText = document.getElementById('productname');
+const vidPidText = document.getElementById('vidpid');
+const connectionTypeText = document.getElementById('connectiontype');
+
+const inputReportTextArea = document.getElementById('inputreport');
+
+const buttonCrossCheckbox = document.getElementById('buttoncross');
+const buttonCircleCheckbox = document.getElementById('buttoncircle');
+const buttonSquareCheckbox = document.getElementById('buttonsquare');
+const buttonTriangleCheckbox = document.getElementById('buttontriangle');
+
+const buttonL1Checkbox = document.getElementById('buttonl1');
+const buttonR1Checkbox = document.getElementById('buttonr1');
+const buttonL2Checkbox = document.getElementById('buttonl2');
+const buttonR2Checkbox = document.getElementById('buttonr2');
+const triggerL2Text = document.getElementById('triggerl2');
+const triggerR2Text = document.getElementById('triggerr2');
+
+const buttonCreateCheckbox = document.getElementById('buttoncreate');
+const buttonOptionsCheckbox = document.getElementById('buttonoptions');
+const buttonL3Checkbox = document.getElementById('buttonl3');
+const buttonR3Checkbox = document.getElementById('buttonr3');
+
+const dpadUpCheckbox = document.getElementById('dpadup');
+const dpadDownCheckbox = document.getElementById('dpaddown');
+const dpadLeftCheckbox = document.getElementById('dpadleft');
+const dpadRightCheckbox = document.getElementById('dpadright');
+
+const buttonPSCheckbox = document.getElementById('buttonps');
+const buttonTouchpadCheckbox = document.getElementById('buttontouchpad');
+const buttonMuteCheckbox = document.getElementById('buttonmute');
+
+const leftStickXText = document.getElementById('leftstickx');
+const leftStickYText = document.getElementById('leftsticky');
+const rightStickXText = document.getElementById('rightstickx');
+const rightStickYText = document.getElementById('rightsticky');
+
+const touch0ActiveCheckbox = document.getElementById('touch0active');
+const touch0IdText = document.getElementById('touch0id');
+const touch0XText = document.getElementById('touch0x');
+const touch0YText = document.getElementById('touch0y');
+const touch1ActiveCheckbox = document.getElementById('touch1active');
+const touch1IdText = document.getElementById('touch1id');
+const touch1XText = document.getElementById('touch1x');
+const touch1YText = document.getElementById('touch1y');
+
+const batteryChargingCheckbox = document.getElementById('batterycharging');
+const batteryFullCheckbox = document.getElementById('batteryfull');
+const batteryLevelText = document.getElementById('batterylevel');
+
+let dshid = null;
+
+function hexbyte(value) {
+  return ('00' + value.toString(16)).substr(-2);
+}
+
+function hexshort(value) {
+  return ('0000' + value.toString(16)).substr(-4);
+}
+
+function normalizeThumbStickAxis(value) {
+  return (2 * value / 0xFF) - 1.0;
+}
+
+function normalizeTriggerAxis(value) {
+  return value / 0xFF;
+}
+
+function normalizeButton(value) {
+  return value ? 1.0 : 0.0;
+}
+
+// Read a little-endian 16-bit unsigned value from |buffer|, starting at byte
+// |startByte|.
+function getLE16(buffer, startByte) {
+  return (buffer.getUint8(startByte + 1) << 8) + buffer.getUint8(startByte);
+}
+
+class DualSenseHid {
+  constructor(device) {
+    this.device_ = device;
+    this.countOffset_ = 0;
+    this.lastCount_ = 0;
+    this.inputFrameCount_ = 0;
+    this.inputStartTime_ = null;
+    this.connectionType_ = null;
+
+    // USB: 20 feature reports, 1 input report, 1 output report
+    // Bluetooth: 12 feature reports, 2 input reports, 9 output reports
+    const numFeatureReports = device.collections[0].featureReports.length;
+    if (numFeatureReports == 20)
+      this.connectionType_ = 'usb';
+    else if (numFeatureReports == 12)
+ 	    this.connectionType_ = 'bluetooth';
+    else
+      this.connectionType_ = 'unknown';
+  }
+
+  async initialize() {
+    // Start listening for input reports.
+    this.device_.oninputreport = (e) => { this.onInputReport(e); };
+  }
+  
+  async readFeatureReport05() {
+  	// By default, bluetooth-connected DualSense only sends input report 0x01 which omits motion and touchpad data.
+    // Reading feature report 0x05 causes it to start sending input report 0x31.
+    if (this.connectionType_ == 'bluetooth')
+      await device.receiveFeatureReport(0x05);
+  }
+
+  handleUsbInputReport01(report) {
+    if (report.byteLength != DUAL_SENSE_USB_INPUT_REPORT_0x01_SIZE)
+    	return;
+
+    let axes0 = report.getUint8(0);
+    let axes1 = report.getUint8(1);
+    let axes2 = report.getUint8(2);
+    let axes3 = report.getUint8(3);
+    let axes4 = report.getUint8(4);
+    let axes5 = report.getUint8(5);
+    // byte 6?
+    let buttons0 = report.getUint8(7);
+    let buttons1 = report.getUint8(8);
+    let buttons2 = report.getUint8(9);
+    // byte 10?
+    let timestamp0 = report.getUint8(11);
+    let timestamp1 = report.getUint8(12);
+    let timestamp2 = report.getUint8(13);
+    let timestamp3 = report.getUint8(14);
+    let accel0 = report.getUint8(15);
+    let accel1 = report.getUint8(16);
+    let accel2 = report.getUint8(17);
+    let accel3 = report.getUint8(18);
+    let accel4 = report.getUint8(19);
+    let accel5 = report.getUint8(20);
+    let gyro0 = report.getUint8(21);
+    let gyro1 = report.getUint8(22);
+    let gyro2 = report.getUint8(23);
+    let gyro3 = report.getUint8(24);
+    let gyro4 = report.getUint8(25);
+    let gyro5 = report.getUint8(26);
+    // bytes 27-31?
+    let touch00 = report.getUint8(32);
+    let touch01 = report.getUint8(33);
+    let touch02 = report.getUint8(34);
+    let touch03 = report.getUint8(35);
+    let touch10 = report.getUint8(36);
+    let touch11 = report.getUint8(37);
+    let touch12 = report.getUint8(38);
+    let touch13 = report.getUint8(39);
+		// byte 40?
+    let r2feedback = report.getUint8(41);
+    let l2feedback = report.getUint8(42);
+    // bytes 43-51?
+    let battery0 = report.getUint8(52);
+    let battery1 = report.getUint8(53);
+    // bytes 54-62?
+
+    let lsx = normalizeThumbStickAxis(axes0);
+		let lsy = normalizeThumbStickAxis(axes1);
+		let rsx = normalizeThumbStickAxis(axes2);
+		let rsy = normalizeThumbStickAxis(axes3);
+    let l2axis = normalizeTriggerAxis(axes4);
+    let r2axis = normalizeTriggerAxis(axes5);
+
+    let dpad = buttons0 & 0x0f;
+		let up = normalizeButton(dpad == 0 || dpad == 1 || dpad == 7);
+		let down = normalizeButton(dpad == 3 || dpad == 4 || dpad == 5);
+		let left = normalizeButton(dpad == 5 || dpad == 6 || dpad == 7);
+		let right = normalizeButton(dpad == 1 || dpad == 2 || dpad == 3);
+    let square = normalizeButton(buttons0 & 0x10);
+    let cross = normalizeButton(buttons0 & 0x20);
+    let circle = normalizeButton(buttons0 & 0x40);
+    let triangle = normalizeButton(buttons0 & 0x80);
+    let l1 = normalizeButton(buttons1 & 0x01);
+    let r1 = normalizeButton(buttons1 & 0x02);
+    let l2 = normalizeButton(buttons1 & 0x04);
+    let r2 = normalizeButton(buttons1 & 0x08);
+    let create = normalizeButton(buttons1 & 0x10);
+    let options = normalizeButton(buttons1 & 0x20);
+    let l3 = normalizeButton(buttons1 & 0x40);
+    let r3 = normalizeButton(buttons1 & 0x80);
+    let ps = normalizeButton(buttons2 & 0x01);
+    let touchpad = normalizeButton(buttons2 & 0x02);
+    let mute = normalizeButton(buttons2 & 0x04);
+    
+    let touch0active = !(touch00 & 0x80);
+    let touch0id = (touch00 & 0x7F);
+    let touch0x = ((touch02 & 0x0F) << 8) | touch01;
+    let touch0y = (touch03 << 4) | ((touch02 & 0xF0) >> 4);
+    let touch1active = !(touch10 & 0x80);
+    let touch1id = (touch10 & 0x7F);
+    let touch1x = ((touch12 & 0x0F) << 8) | touch11;
+    let touch1y = (touch13 << 4) | ((touch12 & 0xF0) >> 4);
+
+    let batteryLevelPercent = (battery0 & 0x0f) * 100 / 8;
+    let batteryFull = !!(battery0 & 0x20);
+		let batteryCharging = !!(battery1 & 0x08);
+
+    buttonCrossCheckbox.checked = cross;
+		buttonCircleCheckbox.checked = circle;
+		buttonSquareCheckbox.checked = square;
+		buttonTriangleCheckbox.checked = triangle;
+    buttonL1Checkbox.checked = l1;
+    buttonR1Checkbox.checked = r1;
+    buttonL2Checkbox.checked = l2;
+    buttonR2Checkbox.checked = r2;
+    triggerL2Text.value = Math.round(l2axis * 100) + '%';
+    triggerR2Text.value = Math.round(r2axis * 100) + '%';
+    buttonCreateCheckbox.checked = create;
+    buttonOptionsCheckbox.checked = options;
+    buttonL3Checkbox.checked = l3;
+    buttonR3Checkbox.checked = r3;
+    
+    dpadUpCheckbox.checked = up;
+    dpadDownCheckbox.checked = down;
+    dpadLeftCheckbox.checked = left;
+    dpadRightCheckbox.checked = right;
+    
+    buttonPSCheckbox.checked = ps;
+    buttonTouchpadCheckbox.checked = touchpad;
+    buttonMuteCheckbox.checked = mute;
+
+    leftStickXText.value = Number(lsx).toFixed(2);
+    leftStickYText.value = Number(lsy).toFixed(2);
+    rightStickXText.value = Number(rsx).toFixed(2);
+    rightStickYText.value = Number(rsy).toFixed(2);
+
+		touch0ActiveCheckbox.checked = touch0active;
+		touch0IdText.value = touch0id;
+		touch0XText.value = touch0x;
+		touch0YText.value = touch0y;
+		touch1ActiveCheckbox.checked = touch1active;
+		touch1IdText.value = touch1id;
+		touch1XText.value = touch1x;
+		touch1YText.value = touch1y;
+
+    batteryChargingCheckbox.checked = batteryCharging;
+    batteryFullCheckbox.checked = batteryFull;
+    batteryLevelText.value = batteryLevelPercent + '%';
+  }
+  
+  handleBluetoothInputReport01(report) {
+    if (report.byteLength != DUAL_SENSE_BT_INPUT_REPORT_0x01_SIZE)
+    	return;
+
+    let axes0 = report.getUint8(0);
+    let axes1 = report.getUint8(1);
+    let axes2 = report.getUint8(2);
+    let axes3 = report.getUint8(3);
+    let buttons0 = report.getUint8(4);
+    let buttons1 = report.getUint8(5);
+    let buttons2 = report.getUint8(6);
+		let axes4 = report.getUint8(7);
+    let axes5 = report.getUint8(8);
+
+    let lsx = normalizeThumbStickAxis(axes0);
+		let lsy = normalizeThumbStickAxis(axes1);
+		let rsx = normalizeThumbStickAxis(axes2);
+		let rsy = normalizeThumbStickAxis(axes3);
+    let l2axis = normalizeTriggerAxis(axes4);
+    let r2axis = normalizeTriggerAxis(axes5);
+
+    let dpad = buttons0 & 0x0f;
+		let up = normalizeButton(dpad == 0 || dpad == 1 || dpad == 7);
+		let down = normalizeButton(dpad == 3 || dpad == 4 || dpad == 5);
+		let left = normalizeButton(dpad == 5 || dpad == 6 || dpad == 7);
+		let right = normalizeButton(dpad == 1 || dpad == 2 || dpad == 3);
+    let square = normalizeButton(buttons0 & 0x10);
+    let cross = normalizeButton(buttons0 & 0x20);
+    let circle = normalizeButton(buttons0 & 0x40);
+    let triangle = normalizeButton(buttons0 & 0x80);
+    let l1 = normalizeButton(buttons1 & 0x01);
+    let r1 = normalizeButton(buttons1 & 0x02);
+    let l2 = normalizeButton(buttons1 & 0x04);
+    let r2 = normalizeButton(buttons1 & 0x08);
+    let create = normalizeButton(buttons1 & 0x10);
+    let options = normalizeButton(buttons1 & 0x20);
+    let l3 = normalizeButton(buttons1 & 0x40);
+    let r3 = normalizeButton(buttons1 & 0x80);
+    let ps = normalizeButton(buttons2 & 0x01);
+    let touchpad = normalizeButton(buttons2 & 0x02);
+
+    buttonCrossCheckbox.checked = cross;
+		buttonCircleCheckbox.checked = circle;
+		buttonSquareCheckbox.checked = square;
+		buttonTriangleCheckbox.checked = triangle;
+    buttonL1Checkbox.checked = l1;
+    buttonR1Checkbox.checked = r1;
+    buttonL2Checkbox.checked = l2;
+    buttonR2Checkbox.checked = r2;
+    triggerL2Text.value = Math.round(l2axis * 100) + '%';
+    triggerR2Text.value = Math.round(r2axis * 100) + '%';
+    buttonCreateCheckbox.checked = create;
+    buttonOptionsCheckbox.checked = options;
+    buttonL3Checkbox.checked = l3;
+    buttonR3Checkbox.checked = r3;
+    
+    dpadUpCheckbox.checked = up;
+    dpadDownCheckbox.checked = down;
+    dpadLeftCheckbox.checked = left;
+    dpadRightCheckbox.checked = right;
+    
+    buttonPSCheckbox.checked = ps;
+    buttonTouchpadCheckbox.checked = touchpad;
+    buttonMuteCheckbox.checked = false;
+
+    leftStickXText.value = Number(lsx).toFixed(2);
+    leftStickYText.value = Number(lsy).toFixed(2);
+    rightStickXText.value = Number(rsx).toFixed(2);
+    rightStickYText.value = Number(rsy).toFixed(2);
+
+		touch0ActiveCheckbox.checked = false;
+		touch0IdText.value = 'N/A';
+		touch0XText.value = '';
+		touch0YText.value = '';
+		touch1ActiveCheckbox.checked = false;
+		touch1IdText.value = 'N/A';
+		touch1XText.value = '';
+		touch1YText.value = '';
+
+    batteryChargingCheckbox.checked = false;
+    batteryFullCheckbox.checked = false;
+    batteryLevelText.value = 'N/A';
+  }
+  
+  handleBluetoothInputReport31(report) {
+    if (report.byteLength != DUAL_SENSE_BT_INPUT_REPORT_0x31_SIZE)
+    	return;
+
+		// byte 0?
+    let axes0 = report.getUint8(1);
+    let axes1 = report.getUint8(2);
+    let axes2 = report.getUint8(3);
+    let axes3 = report.getUint8(4);
+    let axes4 = report.getUint8(5);
+    let axes5 = report.getUint8(6);
+    // byte 7?
+    let buttons0 = report.getUint8(8);
+    let buttons1 = report.getUint8(9);
+    let buttons2 = report.getUint8(10);
+    // byte 11?
+    let timestamp0 = report.getUint8(12);
+    let timestamp1 = report.getUint8(13);
+    let timestamp2 = report.getUint8(14);
+    let timestamp3 = report.getUint8(15);
+    let accel0 = report.getUint8(16);
+    let accel1 = report.getUint8(17);
+    let accel2 = report.getUint8(18);
+    let accel3 = report.getUint8(19);
+    let accel4 = report.getUint8(20);
+    let accel5 = report.getUint8(21);
+    let gyro0 = report.getUint8(22);
+    let gyro1 = report.getUint8(23);
+    let gyro2 = report.getUint8(24);
+    let gyro3 = report.getUint8(25);
+    let gyro4 = report.getUint8(26);
+    let gyro5 = report.getUint8(27);
+    // bytes 28-32?
+    let touch00 = report.getUint8(33);
+    let touch01 = report.getUint8(34);
+    let touch02 = report.getUint8(35);
+    let touch03 = report.getUint8(36);
+    let touch10 = report.getUint8(37);
+    let touch11 = report.getUint8(38);
+    let touch12 = report.getUint8(39);
+    let touch13 = report.getUint8(40);
+		// byte 41?
+    let r2feedback = report.getUint8(42);
+    let l2feedback = report.getUint8(43);
+    // bytes 44-52?
+    let battery0 = report.getUint8(53);
+    let battery1 = report.getUint8(54);
+    // bytes 55-76?
+
+    let lsx = normalizeThumbStickAxis(axes0);
+		let lsy = normalizeThumbStickAxis(axes1);
+		let rsx = normalizeThumbStickAxis(axes2);
+		let rsy = normalizeThumbStickAxis(axes3);
+    let l2axis = normalizeTriggerAxis(axes4);
+    let r2axis = normalizeTriggerAxis(axes5);
+
+    let dpad = buttons0 & 0x0f;
+		let up = normalizeButton(dpad == 0 || dpad == 1 || dpad == 7);
+		let down = normalizeButton(dpad == 3 || dpad == 4 || dpad == 5);
+		let left = normalizeButton(dpad == 5 || dpad == 6 || dpad == 7);
+		let right = normalizeButton(dpad == 1 || dpad == 2 || dpad == 3);
+    let square = normalizeButton(buttons0 & 0x10);
+    let cross = normalizeButton(buttons0 & 0x20);
+    let circle = normalizeButton(buttons0 & 0x40);
+    let triangle = normalizeButton(buttons0 & 0x80);
+    let l1 = normalizeButton(buttons1 & 0x01);
+    let r1 = normalizeButton(buttons1 & 0x02);
+    let l2 = normalizeButton(buttons1 & 0x04);
+    let r2 = normalizeButton(buttons1 & 0x08);
+    let create = normalizeButton(buttons1 & 0x10);
+    let options = normalizeButton(buttons1 & 0x20);
+    let l3 = normalizeButton(buttons1 & 0x40);
+    let r3 = normalizeButton(buttons1 & 0x80);
+    let ps = normalizeButton(buttons2 & 0x01);
+    let touchpad = normalizeButton(buttons2 & 0x02);
+    let mute = normalizeButton(buttons2 & 0x04);
+    
+    let touch0active = !(touch00 & 0x80);
+    let touch0id = (touch00 & 0x7F);
+    let touch0x = ((touch02 & 0x0F) << 8) | touch01;
+    let touch0y = (touch03 << 4) | ((touch02 & 0xF0) >> 4);
+    let touch1active = !(touch10 & 0x80);
+    let touch1id = (touch10 & 0x7F);
+    let touch1x = ((touch12 & 0x0F) << 8) | touch11;
+    let touch1y = (touch13 << 4) | ((touch12 & 0xF0) >> 4);
+
+    let batteryLevelPercent = (battery0 & 0x0f) * 100 / 8;
+    let batteryFull = !!(battery0 & 0x20);
+		let batteryCharging = !!(battery1 & 0x08);
+
+    buttonCrossCheckbox.checked = cross;
+		buttonCircleCheckbox.checked = circle;
+		buttonSquareCheckbox.checked = square;
+		buttonTriangleCheckbox.checked = triangle;
+    buttonL1Checkbox.checked = l1;
+    buttonR1Checkbox.checked = r1;
+    buttonL2Checkbox.checked = l2;
+    buttonR2Checkbox.checked = r2;
+    triggerL2Text.value = Math.round(l2axis * 100) + '%';
+    triggerR2Text.value = Math.round(r2axis * 100) + '%';
+    buttonCreateCheckbox.checked = create;
+    buttonOptionsCheckbox.checked = options;
+    buttonL3Checkbox.checked = l3;
+    buttonR3Checkbox.checked = r3;
+    
+    dpadUpCheckbox.checked = up;
+    dpadDownCheckbox.checked = down;
+    dpadLeftCheckbox.checked = left;
+    dpadRightCheckbox.checked = right;
+    
+    buttonPSCheckbox.checked = ps;
+    buttonTouchpadCheckbox.checked = touchpad;
+    buttonMuteCheckbox.checked = mute;
+
+    leftStickXText.value = Number(lsx).toFixed(2);
+    leftStickYText.value = Number(lsy).toFixed(2);
+    rightStickXText.value = Number(rsx).toFixed(2);
+    rightStickYText.value = Number(rsy).toFixed(2);
+
+		touch0ActiveCheckbox.checked = touch0active;
+		touch0IdText.value = touch0id;
+		touch0XText.value = touch0x;
+		touch0YText.value = touch0y;
+		touch1ActiveCheckbox.checked = touch1active;
+		touch1IdText.value = touch1id;
+		touch1XText.value = touch1x;
+		touch1YText.value = touch1y;
+
+    batteryChargingCheckbox.checked = batteryCharging;
+    batteryFullCheckbox.checked = batteryFull;
+    batteryLevelText.value = batteryLevelPercent + '%';
+  }
+
+  onInputReport(event) {
+    let reportId = event.reportId;
+    let report = event.data;
+    let reportString = hexbyte(reportId);
+    for (let i = 0; i < report.byteLength; ++i)
+      reportString += ' ' + hexbyte(report.getUint8(i));
+
+		inputReportTextArea.value = reportString;
+    
+    productNameText.value = event.device.productName;
+    vidPidText.value = hexshort(event.device.vendorId) + ':' + hexshort(event.device.productId);
+    connectionTypeText.value = this.connectionType_;
+
+		if (this.connectionType_ == 'usb') {
+      if (reportId == 0x01)
+        this.handleUsbInputReport01(report);
+      else
+        return;
+    } else if (this.connectionType_ == 'bluetooth') {
+      if (reportId == 0x01)
+        this.handleBluetoothInputReport01(report);
+      else if (reportId == 0x31)
+        this.handleBluetoothInputReport31(report);
+      else
+        return;
+    } else {
+      return;
+    }
+  }
+}
+
+async function requestDevice() {
+  let requestOptions = {
+    filters: [
+      { vendorId: VENDOR_ID_SONY, productId: PRODUCT_ID_DUAL_SENSE,
+        usagePage: USAGE_PAGE_GENERIC_DESKTOP, usage: USAGE_ID_GD_GAME_PAD },
+    ]
+  };
+
+  try {
+    let devices = await navigator.hid.requestDevice(requestOptions);
+    device = devices[0];
+  } catch(e) {}
+
+  if (!device)
+    return null;
+
+  if (!device.opened) {
+    await device.open();
+    if (!device.opened) {
+      console.log('Failed to open ' + device.productName);
+      return null;
+    }
+  }
+
+  dshid = new DualSenseHid(device);
+  await dshid.initialize();
+  return dshid;
+}
+
+</script>
+</body>
+</html>
