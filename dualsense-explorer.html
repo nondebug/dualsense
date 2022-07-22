@@ -1,16 +1,32 @@
 <html>
-<head></head>
+<head>
+<title>DualSense Explorer</title>
+</head>
 <body>
-<button type="button" onclick="requestDevice()">Connect</button><br />
-<button type="button" onclick="dshid.readFeatureReport05()">Read feature report 0x05 (Bluetooth)</button><br />
-
+<h1>DualSense Explorer</h1>
+<p>
+  Use the <a href="https://developer.mozilla.org/en-US/docs/Web/API/WebHID_API">WebHID API</a> to connect to a <a href="https://direct.playstation.com/en-us/accessories/accessory/dualsense-wireless-controller.3005715">Sony PlayStation 5 DualSense Wireless Controller</a>.
+</p>
+<h3>Instructions</h3>
+<p>
+  Connect the controller to your computer using either <b>Bluetooth</b> or a <b>USB cable</b>.
+</p>
+<p>
+  Then, click <button type="button" onclick="requestDevice()">Connect DualSense</button>, select <b>Wireless Controller</b> and click the <b>Connect</b> button.
+</p>
+<p>
+  This page requires a Chromium-based browser like <a href="https://www.google.com/chrome/">Google Chrome</a>, <a href="https://www.microsoft.com/edge">Microsoft Edge</a>, <a href="https://www.opera.com/">Opera</a>, <a href="https://vivaldi.com/">Vivaldi</a>, or <a href="https://brave.com/">Brave</a>. It uses WebHID API, which is only available on Windows, macOS, chromeOS, and Linux.
+</p>
+<hr />
+<h3>Device information</h3>
 Connected device: <input type="text" id="productname" disabled /><br />
-VID:PID: <input type="text" id="vidpid" style="width:100;" disabled /><br />
+Vendor and Product ID: <input type="text" id="vidpid" style="width:100;" disabled /><br />
 Connection type: <input type="text" id="connectiontype" style="width:100;" disabled /><br />
-
+<hr />
+<h3>Input report</h3>
 <textarea id="inputreport" cols="48" rows="6" disabled></textarea><br />
 
-<input type="checkbox" id="buttoncross" disabled>Cross button</input><br />
+<input type="checkbox" id="buttoncross" class="cb-disabled" disabled>Cross button</input><br />
 <input type="checkbox" id="buttoncircle" disabled>Circle button</input><br />
 <input type="checkbox" id="buttonsquare" disabled>Square button</input><br />
 <input type="checkbox" id="buttontriangle" disabled>Triangle button</input><br />
@@ -48,11 +64,52 @@ Connection type: <input type="text" id="connectiontype" style="width:100;" disab
 <input type="text" id="touch1x" style="text-align:right; width:50;" disabled />Touchpoint 1 X<br />
 <input type="text" id="touch1y" style="text-align:right; width:50;" disabled />Touchpoint 1 Y<br />
 
+<input type="text" id="gyrox" style="text-align:right; width:50;" disabled />Gyroscope X<br />
+<input type="text" id="gyroy" style="text-align:right; width:50;" disabled />Gyroscope Y<br />
+<input type="text" id="gyroz" style="text-align:right; width:50;" disabled />Gyroscope Z<br />
+<input type="text" id="accelx" style="text-align:right; width:50;" disabled />Accelerometer X<br />
+<input type="text" id="accely" style="text-align:right; width:50;" disabled />Accelerometer Y<br />
+<input type="text" id="accelz" style="text-align:right; width:50;" disabled />Accelerometer Z<br />
+
+<input type="checkbox" id="l2force" disabled>L2 adaptive trigger effect</input><br />
+<input type="text" id="l2state" style="text-align:right; width:50;" disabled />L2 trigger state<br />
+<input type="checkbox" id="r2force" disabled>R2 adaptive trigger effect</input><br />
+<input type="text" id="r2state" style="text-align:right; width:50;" disabled />R2 trigger state<br />
+
 <input type="checkbox" id="batterycharging" disabled>Charging</input><br />
 <input type="checkbox" id="batteryfull" disabled>Fully charged</input><br />
 <input type="text" id="batterylevel" style="text-align:right; width:50;" disabled />Battery level<br />
-<script>
+<hr />
+<h3>Output report</h3>
+<textarea id="outputreport" cols="48" rows="6" disabled></textarea><br />
 
+<input type="range" id="lightbarr" min="0" max="255" value="255">Lightbar Red<br />
+<input type="range" id="lightbarg" min="0" max="255" value="255">Lightbar Green<br />
+<input type="range" id="lightbarb" min="0" max="255" value="255">Lightbar Blue<br />
+<input type="checkbox" id="playerLed1">Player LED 1<br />
+<input type="checkbox" id="playerLed2">Player LED 2<br />
+<input type="checkbox" id="playerLed3">Player LED 3<br />
+<input type="checkbox" id="playerLed4">Player LED 4<br />
+<input type="checkbox" id="playerLed5">Player LED 5<br />
+<input type="checkbox" id="muteLed">Microphone Mute LED<br />
+
+<input type="text" id="l2effectmode" style="text-align:right; width:50;" value="26" />L2 trigger effect mode<br />
+<input type="text" id="l2effectparam1" style="text-align:right; width:50;" value="90" />L2 trigger effect parameter 1<br />
+<input type="text" id="l2effectparam2" style="text-align:right; width:50;" value="A0" />L2 trigger effect parameter 2<br />
+<input type="text" id="l2effectparam3" style="text-align:right; width:50;" value="FF" />L2 trigger effect parameter 3<br />
+<input type="text" id="l2effectparam4" style="text-align:right; width:50;" />L2 trigger effect parameter 4<br />
+<input type="text" id="l2effectparam5" style="text-align:right; width:50;" />L2 trigger effect parameter 5<br />
+<input type="text" id="l2effectparam6" style="text-align:right; width:50;" />L2 trigger effect parameter 6<br />
+<input type="text" id="l2effectparam7" style="text-align:right; width:50;" />L2 trigger effect parameter 7<br />
+<input type="text" id="r2effectmode" style="text-align:right; width:50;" value="26" />R2 trigger effect mode<br />
+<input type="text" id="r2effectparam1" style="text-align:right; width:50;" value="90" />R2 trigger effect parameter 1<br />
+<input type="text" id="r2effectparam2" style="text-align:right; width:50;" value="A0" />R2 trigger effect parameter 2<br />
+<input type="text" id="r2effectparam3" style="text-align:right; width:50;" value="FF" />R2 trigger effect parameter 3<br />
+<input type="text" id="r2effectparam4" style="text-align:right; width:50;" />R2 trigger effect parameter 4<br />
+<input type="text" id="r2effectparam5" style="text-align:right; width:50;" />R2 trigger effect parameter 5<br />
+<input type="text" id="r2effectparam6" style="text-align:right; width:50;" />R2 trigger effect parameter 6<br />
+<input type="text" id="r2effectparam7" style="text-align:right; width:50;" />R2 trigger effect parameter 7<br />
+<script>
 const VENDOR_ID_SONY = 0x054c;
 const PRODUCT_ID_DUAL_SENSE = 0x0ce6;
 
@@ -110,68 +167,255 @@ const touch1IdText = document.getElementById('touch1id');
 const touch1XText = document.getElementById('touch1x');
 const touch1YText = document.getElementById('touch1y');
 
+const gyroXText = document.getElementById('gyrox');
+const gyroYText = document.getElementById('gyroy');
+const gyroZText = document.getElementById('gyroz');
+const accelXText = document.getElementById('accelx');
+const accelYText = document.getElementById('accely');
+const accelZText = document.getElementById('accelz');
+
+const l2ForceCheckbox = document.getElementById('l2force');
+const l2StateText = document.getElementById('l2state');
+const r2ForceCheckbox = document.getElementById('r2force');
+const r2StateText = document.getElementById('r2state');
+
 const batteryChargingCheckbox = document.getElementById('batterycharging');
 const batteryFullCheckbox = document.getElementById('batteryfull');
 const batteryLevelText = document.getElementById('batterylevel');
 
-let dshid = null;
+const outputReportTextArea = document.getElementById('outputreport');
 
-function hexbyte(value) {
-  return ('00' + value.toString(16)).substr(-2);
-}
+const lightbarRedSlider = document.getElementById('lightbarr');
+const lightbarGreenSlider = document.getElementById('lightbarg');
+const lightbarBlueSlider = document.getElementById('lightbarb');
 
-function hexshort(value) {
-  return ('0000' + value.toString(16)).substr(-4);
-}
+const playerLed1Checkbox = document.getElementById('playerLed1');
+const playerLed2Checkbox = document.getElementById('playerLed2');
+const playerLed3Checkbox = document.getElementById('playerLed3');
+const playerLed4Checkbox = document.getElementById('playerLed4');
+const playerLed5Checkbox = document.getElementById('playerLed5');
+const muteLedCheckbox = document.getElementById('muteLed');
 
-function normalizeThumbStickAxis(value) {
+const l2EffectModeText = document.getElementById('l2effectmode');
+const l2EffectParam1Text = document.getElementById('l2effectparam1');
+const l2EffectParam2Text = document.getElementById('l2effectparam2');
+const l2EffectParam3Text = document.getElementById('l2effectparam3');
+const l2EffectParam4Text = document.getElementById('l2effectparam4');
+const l2EffectParam5Text = document.getElementById('l2effectparam5');
+const l2EffectParam6Text = document.getElementById('l2effectparam6');
+const l2EffectParam7Text = document.getElementById('l2effectparam7');
+const r2EffectModeText = document.getElementById('r2effectmode');
+const r2EffectParam1Text = document.getElementById('r2effectparam1');
+const r2EffectParam2Text = document.getElementById('r2effectparam2');
+const r2EffectParam3Text = document.getElementById('r2effectparam3');
+const r2EffectParam4Text = document.getElementById('r2effectparam4');
+const r2EffectParam5Text = document.getElementById('r2effectparam5');
+const r2EffectParam6Text = document.getElementById('r2effectparam6');
+const r2EffectParam7Text = document.getElementById('r2effectparam7');
+
+const hex8 = value => { return ('00' + (value >>> 0).toString(16)).substr(-2); };
+const hex16 = value => { return ('0000' + (value >>> 0).toString(16)).substr(-4); };
+const hex32 = value => { return ('00000000' + (value >>> 0).toString(16)).substr(-8); };
+
+const parseHex = value => {
+  if (value == '')
+    return 0;
+
+  return parseInt(value, 16);
+};
+
+// Generate CRC32 lookup table.
+const makeCRCTable = () => {
+    let c;
+    const crcTable = [];
+    for (let n = 0; n < 256; ++n) {
+        c = n;
+        for (let k = 0; k < 8; ++k)
+            c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
+        crcTable[n] = (c >>> 0);
+    }
+    return crcTable;
+};
+
+// Compute CRC32 for `prefixBytes` concatenated with `dataView`.
+const crc32 = (prefixBytes, dataView) => {
+    if (window.crcTable === undefined)
+      window.crcTable = makeCRCTable();
+    let crc = (-1 >>> 0);
+    for (const byte of prefixBytes)
+        crc = (crc >>> 8) ^ window.crcTable[(crc ^ byte) & 0xFF];
+    for (let i = 0; i < dataView.byteLength; ++i)
+        crc = (crc >>> 8) ^ window.crcTable[(crc ^ dataView.getUint8(i)) & 0xFF];
+    return (crc ^ (-1)) >>> 0;
+};
+
+// Given a DualSense Bluetooth output report with `reportId` and `reportData`,
+// compute the CRC32 checksum and write it to the last four bytes of `reportData`.
+const fillDualSenseChecksum = (reportId, reportData) => {
+  const crc = crc32([0xa2, reportId], new DataView(reportData.buffer, 0, reportData.byteLength - 4));
+  reportData[reportData.byteLength - 4] = (crc >>> 0) & 0xff;
+  reportData[reportData.byteLength - 3] = (crc >>> 8) & 0xff;
+  reportData[reportData.byteLength - 2] = (crc >>> 16) & 0xff;
+  reportData[reportData.byteLength - 1] = (crc >>> 24) & 0xff;
+};
+
+// Normalize an 8-bit thumbstick axis to the range [-1, +1].
+const normalizeThumbStickAxis = value => {
   return (2 * value / 0xFF) - 1.0;
-}
+};
 
-function normalizeTriggerAxis(value) {
+// Normalize an 8-bit trigger axis to the range [0, +1].
+const normalizeTriggerAxis = value => {
   return value / 0xFF;
-}
+};
 
-function normalizeButton(value) {
+// Normalize a digital button value to the range [0, +1].
+const normalizeButton = value => {
   return value ? 1.0 : 0.0;
-}
-
-// Read a little-endian 16-bit unsigned value from |buffer|, starting at byte
-// |startByte|.
-function getLE16(buffer, startByte) {
-  return (buffer.getUint8(startByte + 1) << 8) + buffer.getUint8(startByte);
-}
+};
 
 class DualSenseHid {
-  constructor(device) {
-    this.device_ = device;
-    this.countOffset_ = 0;
-    this.lastCount_ = 0;
-    this.inputFrameCount_ = 0;
-    this.inputStartTime_ = null;
+  constructor(hidDevice) {
+    this.device_ = hidDevice;
     this.connectionType_ = null;
 
-    // USB: 20 feature reports, 1 input report, 1 output report
-    // Bluetooth: 12 feature reports, 2 input reports, 9 output reports
-    const numFeatureReports = device.collections[0].featureReports.length;
-    if (numFeatureReports == 20)
-      this.connectionType_ = 'usb';
-    else if (numFeatureReports == 12)
- 	    this.connectionType_ = 'bluetooth';
-    else
-      this.connectionType_ = 'unknown';
+    // UI controls that affect the output report.
+    this.checkboxPlayerLeds_ = 0x00;
+    this.sliderLightbarRed_ = 0xFF;
+    this.sliderLightbarGreen_ = 0xFF;
+    this.sliderLightbarBlue_ = 0xFF;
+
+    // Output report state.
+    this.outputSeq_ = 1;
+    this.playerLeds_ = 0x00;
+    this.muteLed_ = 0x00;
+    this.motorLeft_ = 0x00;
+    this.motorRight_ = 0x00;
+    this.l2EffectMode_ = 0x26;
+    this.l2EffectParam1_ = 0x90;
+    this.l2EffectParam2_ = 0xA0;
+    this.l2EffectParam3_ = 0xFF;
+    this.l2EffectParam4_ = 0x00;
+    this.l2EffectParam5_ = 0x00;
+    this.l2EffectParam6_ = 0x00;
+    this.l2EffectParam7_ = 0x00;
+    this.r2EffectMode_ = 0x26;
+    this.r2EffectParam1_ = 0x90;
+    this.r2EffectParam2_ = 0xA0;
+    this.r2EffectParam3_ = 0xFF;
+    this.r2EffectParam4_ = 0x00;
+    this.r2EffectParam5_ = 0x00;
+    this.r2EffectParam6_ = 0x00;
+    this.r2EffectParam7_ = 0x00;
+    this.lightbarRed_ = 0xFF;
+    this.lightbarGreen_ = 0xFF;
+    this.lightbarBlue_ = 0xFF;
+
+    // WebHID API doesn't indicate whether we are connected through the controller's
+    // USB or Bluetooth interface. The protocol is different depending on the connection
+    // type so we will try to detect it based on the collection information.
+    this.connectionType_ = 'unknown';
+    for (const c of this.device_.collections) {
+      if (c.usagePage != USAGE_PAGE_GENERIC_DESKTOP || c.usage != USAGE_ID_GD_GAME_PAD)
+        continue;
+
+      // Compute the maximum input report byte length and compare against known values.
+      let maxInputReportBytes = c.inputReports.reduce((max, report) => {
+        return Math.max(max, report.items.reduce((sum, item) => { return sum + item.reportSize * item.reportCount; }, 0));
+      }, 0);
+      if (maxInputReportBytes == 504)
+        this.connectionType_ = 'usb';
+      else if (maxInputReportBytes == 616)
+        this.connectionType_ = 'bluetooth';
+    }
   }
 
-  async initialize() {
-    // Start listening for input reports.
-    this.device_.oninputreport = (e) => { this.onInputReport(e); };
+  initialize() {
+    this.initializeUI();
+    this.device_.oninputreport = e => { this.onInputReport(e); }
   }
   
   async readFeatureReport05() {
   	// By default, bluetooth-connected DualSense only sends input report 0x01 which omits motion and touchpad data.
     // Reading feature report 0x05 causes it to start sending input report 0x31.
+    //
+    // Note: The Gamepad API will do this for us if it enumerates the gamepad.
+    // Other applications like Steam may have also done this already.
     if (this.connectionType_ == 'bluetooth')
       await device.receiveFeatureReport(0x05);
+  }
+
+  initializeUI() {
+    const onPlayerLedsChanged = e => {
+      this.checkboxPlayerLeds_ = (playerLed1Checkbox.checked ? 0x01 : 0x00)
+          | (playerLed2Checkbox.checked ? 0x02 : 0x00)
+          | (playerLed3Checkbox.checked ? 0x04 : 0x00)
+          | (playerLed4Checkbox.checked ? 0x08 : 0x00)
+          | (playerLed5Checkbox.checked ? 0x10 : 0x00);
+    };
+    playerLed1Checkbox.onchange = onPlayerLedsChanged;
+    playerLed2Checkbox.onchange = onPlayerLedsChanged;
+    playerLed3Checkbox.onchange = onPlayerLedsChanged;
+    playerLed4Checkbox.onchange = onPlayerLedsChanged;
+    playerLed5Checkbox.onchange = onPlayerLedsChanged;
+
+    const onMuteLedChanged = e => {
+      this.muteLed_ = muteLedCheckbox.checked ? 0x01 : 0x00;
+    };
+    muteLedCheckbox.onchange = onMuteLedChanged;
+
+    const onLightbarColorChanged = e => {
+      this.sliderLightbarRed_ = lightbarRedSlider.value;
+      this.sliderLightbarGreen_ = lightbarGreenSlider.value;
+      this.sliderLightbarBlue_ = lightbarBlueSlider.value;
+    }
+    lightbarRedSlider.oninput = onLightbarColorChanged;
+    lightbarGreenSlider.oninput = onLightbarColorChanged;
+    lightbarBlueSlider.oninput = onLightbarColorChanged;
+
+    const onTriggerEffectChanged = e => {
+      this.l2EffectMode_ = parseHex(l2EffectModeText.value);
+      this.l2EffectParam1_ = parseHex(l2EffectParam1Text.value);
+      this.l2EffectParam2_ = parseHex(l2EffectParam2Text.value);
+      this.l2EffectParam3_ = parseHex(l2EffectParam3Text.value);
+      this.l2EffectParam4_ = parseHex(l2EffectParam4Text.value);
+      this.l2EffectParam5_ = parseHex(l2EffectParam5Text.value);
+      this.l2EffectParam6_ = parseHex(l2EffectParam6Text.value);
+      this.l2EffectParam7_ = parseHex(l2EffectParam7Text.value);
+      this.r2EffectMode_ = parseHex(r2EffectModeText.value);
+      this.r2EffectParam1_ = parseHex(r2EffectParam1Text.value);
+      this.r2EffectParam2_ = parseHex(r2EffectParam2Text.value);
+      this.r2EffectParam3_ = parseHex(r2EffectParam3Text.value);
+      this.r2EffectParam4_ = parseHex(r2EffectParam4Text.value);
+      this.r2EffectParam5_ = parseHex(r2EffectParam5Text.value);
+      this.r2EffectParam6_ = parseHex(r2EffectParam6Text.value);
+      this.r2EffectParam7_ = parseHex(r2EffectParam7Text.value);
+    }
+    l2EffectModeText.onchange = onTriggerEffectChanged;
+    l2EffectParam1Text.onchange = onTriggerEffectChanged;
+    l2EffectParam2Text.onchange = onTriggerEffectChanged;
+    l2EffectParam3Text.onchange = onTriggerEffectChanged;
+    l2EffectParam4Text.onchange = onTriggerEffectChanged;
+    l2EffectParam5Text.onchange = onTriggerEffectChanged;
+    l2EffectParam6Text.onchange = onTriggerEffectChanged;
+    l2EffectParam7Text.onchange = onTriggerEffectChanged;
+    r2EffectModeText.onchange = onTriggerEffectChanged;
+    r2EffectParam1Text.onchange = onTriggerEffectChanged;
+    r2EffectParam2Text.onchange = onTriggerEffectChanged;
+    r2EffectParam3Text.onchange = onTriggerEffectChanged;
+    r2EffectParam4Text.onchange = onTriggerEffectChanged;
+    r2EffectParam5Text.onchange = onTriggerEffectChanged;
+    r2EffectParam6Text.onchange = onTriggerEffectChanged;
+    r2EffectParam7Text.onchange = onTriggerEffectChanged;
+  }
+
+  onConnectionError() {
+    productNameText.value = '';
+    vidPidText.value = '';
+    connectionTypeText.value = '';
+    inputReportTextArea.value = '';
+    outputReportTextArea.value = '';
+    delete window.dshid;
   }
 
   handleUsbInputReport01(report) {
@@ -184,28 +428,32 @@ class DualSenseHid {
     let axes3 = report.getUint8(3);
     let axes4 = report.getUint8(4);
     let axes5 = report.getUint8(5);
-    // byte 6?
+    let seqNum = report.getUint8(6);
     let buttons0 = report.getUint8(7);
     let buttons1 = report.getUint8(8);
     let buttons2 = report.getUint8(9);
-    // byte 10?
+    let buttons3 = report.getUint8(10);
     let timestamp0 = report.getUint8(11);
     let timestamp1 = report.getUint8(12);
     let timestamp2 = report.getUint8(13);
     let timestamp3 = report.getUint8(14);
-    let accel0 = report.getUint8(15);
-    let accel1 = report.getUint8(16);
-    let accel2 = report.getUint8(17);
-    let accel3 = report.getUint8(18);
-    let accel4 = report.getUint8(19);
-    let accel5 = report.getUint8(20);
-    let gyro0 = report.getUint8(21);
-    let gyro1 = report.getUint8(22);
-    let gyro2 = report.getUint8(23);
-    let gyro3 = report.getUint8(24);
-    let gyro4 = report.getUint8(25);
-    let gyro5 = report.getUint8(26);
-    // bytes 27-31?
+    let gyroX0 = report.getUint8(15);
+    let gyroX1 = report.getUint8(16);
+    let gyroY0 = report.getUint8(17);
+    let gyroY1 = report.getUint8(18);
+    let gyroZ0 = report.getUint8(19);
+    let gyroZ1 = report.getUint8(20);
+    let accelX0 = report.getUint8(21);
+    let accelX1 = report.getUint8(22);
+    let accelY0 = report.getUint8(23);
+    let accelY1 = report.getUint8(24);
+    let accelZ0 = report.getUint8(25);
+    let accelZ1 = report.getUint8(26);
+    let sensorTimestamp0 = report.getUint8(27);
+    let sensorTimestamp1 = report.getUint8(28);
+    let sensorTimestamp2 = report.getUint8(29);
+    let sensorTimestamp3 = report.getUint8(30);
+    // byte 31?
     let touch00 = report.getUint8(32);
     let touch01 = report.getUint8(33);
     let touch02 = report.getUint8(34);
@@ -220,7 +468,8 @@ class DualSenseHid {
     // bytes 43-51?
     let battery0 = report.getUint8(52);
     let battery1 = report.getUint8(53);
-    // bytes 54-62?
+    // bytes 54-58?
+    // bytes 59-62 CRC32 checksum
 
     let lsx = normalizeThumbStickAxis(axes0);
 		let lsy = normalizeThumbStickAxis(axes1);
@@ -258,6 +507,19 @@ class DualSenseHid {
     let touch1id = (touch10 & 0x7F);
     let touch1x = ((touch12 & 0x0F) << 8) | touch11;
     let touch1y = (touch13 << 4) | ((touch12 & 0xF0) >> 4);
+
+    let gyrox = (gyroX1 << 8) | gyroX0;
+    if (gyrox > 0x7FFF) gyrox -= 0x10000;
+    let gyroy = (gyroY1 << 8) | gyroY0;
+    if (gyroy > 0x7FFF) gyroy -= 0x10000;
+    let gyroz = (gyroZ1 << 8) | gyroZ0;
+    if (gyroz > 0x7FFF) gyroz -= 0x10000;
+    let accelx = (accelX1 << 8) | accelX0;
+    if (accelx > 0x7FFF) accelx -= 0x10000;
+    let accely = (accelY1 << 8) | accelY0;
+    if (accely > 0x7FFF) accely -= 0x10000;
+    let accelz = (accelZ1 << 8) | accelZ0;
+    if (accelz > 0x7FFF) accelz -= 0x10000;
 
     let batteryLevelPercent = (battery0 & 0x0f) * 100 / 8;
     let batteryFull = !!(battery0 & 0x20);
@@ -300,6 +562,18 @@ class DualSenseHid {
 		touch1IdText.value = touch1id;
 		touch1XText.value = touch1x;
 		touch1YText.value = touch1y;
+
+    gyroXText.value = gyrox;
+    gyroYText.value = gyroy;
+    gyroZText.value = gyroz;
+    accelXText.value = accelx;
+    accelYText.value = accely;
+    accelZText.value = accelz;
+
+    l2ForceCheckbox.checked = l2feedback & 0x10;
+    l2StateText.value = l2feedback & 0x0F;
+    r2ForceCheckbox.checked = r2feedback & 0x10;
+    r2StateText.value = r2feedback & 0x0F;
 
     batteryChargingCheckbox.checked = batteryCharging;
     batteryFullCheckbox.checked = batteryFull;
@@ -410,18 +684,18 @@ class DualSenseHid {
     let timestamp1 = report.getUint8(13);
     let timestamp2 = report.getUint8(14);
     let timestamp3 = report.getUint8(15);
-    let accel0 = report.getUint8(16);
-    let accel1 = report.getUint8(17);
-    let accel2 = report.getUint8(18);
-    let accel3 = report.getUint8(19);
-    let accel4 = report.getUint8(20);
-    let accel5 = report.getUint8(21);
-    let gyro0 = report.getUint8(22);
-    let gyro1 = report.getUint8(23);
-    let gyro2 = report.getUint8(24);
-    let gyro3 = report.getUint8(25);
-    let gyro4 = report.getUint8(26);
-    let gyro5 = report.getUint8(27);
+    let gyroX0 = report.getUint8(16);
+    let gyroX1 = report.getUint8(17);
+    let gyroY0 = report.getUint8(18);
+    let gyroY1 = report.getUint8(19);
+    let gyroZ0 = report.getUint8(20);
+    let gyroZ1 = report.getUint8(21);
+    let accelX0 = report.getUint8(22);
+    let accelX1 = report.getUint8(23);
+    let accelY0 = report.getUint8(24);
+    let accelY1 = report.getUint8(25);
+    let accelZ0 = report.getUint8(26);
+    let accelZ1 = report.getUint8(27);
     // bytes 28-32?
     let touch00 = report.getUint8(33);
     let touch01 = report.getUint8(34);
@@ -476,6 +750,19 @@ class DualSenseHid {
     let touch1x = ((touch12 & 0x0F) << 8) | touch11;
     let touch1y = (touch13 << 4) | ((touch12 & 0xF0) >> 4);
 
+    let gyrox = (gyroX1 << 8) | gyroX0;
+    if (gyrox > 0x7FFF) gyrox -= 0x10000;
+    let gyroy = (gyroY1 << 8) | gyroY0;
+    if (gyroy > 0x7FFF) gyroy -= 0x10000;
+    let gyroz = (gyroZ1 << 8) | gyroZ0;
+    if (gyroz > 0x7FFF) gyroz -= 0x10000;
+    let accelx = (accelX1 << 8) | accelX0;
+    if (accelx > 0x7FFF) accelx -= 0x10000;
+    let accely = (accelY1 << 8) | accelY0;
+    if (accely > 0x7FFF) accely -= 0x10000;
+    let accelz = (accelZ1 << 8) | accelZ0;
+    if (accelz > 0x7FFF) accelz -= 0x10000;
+
     let batteryLevelPercent = (battery0 & 0x0f) * 100 / 8;
     let batteryFull = !!(battery0 & 0x20);
 		let batteryCharging = !!(battery1 & 0x08);
@@ -518,6 +805,18 @@ class DualSenseHid {
 		touch1XText.value = touch1x;
 		touch1YText.value = touch1y;
 
+    gyroXText.value = gyrox;
+    gyroYText.value = gyroy;
+    gyroZText.value = gyroz;
+    accelXText.value = accelx;
+    accelYText.value = accely;
+    accelZText.value = accelz;
+
+    l2ForceCheckbox.checked = l2feedback & 0x10;
+    l2StateText.value = l2feedback & 0x0F;
+    r2ForceCheckbox.checked = r2feedback & 0x10;
+    r2StateText.value = r2feedback & 0x0F;
+
     batteryChargingCheckbox.checked = batteryCharging;
     batteryFullCheckbox.checked = batteryFull;
     batteryLevelText.value = batteryLevelPercent + '%';
@@ -526,14 +825,14 @@ class DualSenseHid {
   onInputReport(event) {
     let reportId = event.reportId;
     let report = event.data;
-    let reportString = hexbyte(reportId);
+    let reportString = hex8(reportId);
     for (let i = 0; i < report.byteLength; ++i)
-      reportString += ' ' + hexbyte(report.getUint8(i));
+      reportString += ' ' + hex8(report.getUint8(i));
 
 		inputReportTextArea.value = reportString;
     
     productNameText.value = event.device.productName;
-    vidPidText.value = hexshort(event.device.vendorId) + ':' + hexshort(event.device.productId);
+    vidPidText.value = hex16(event.device.vendorId) + ':' + hex16(event.device.productId);
     connectionTypeText.value = this.connectionType_;
 
 		if (this.connectionType_ == 'usb') {
@@ -552,9 +851,224 @@ class DualSenseHid {
       return;
     }
   }
+
+  async sendOutputReport() {
+    const pads = navigator.getGamepads();
+    this.lightbarRed_ = this.sliderLightbarRed_;
+    this.lightbarGreen_ = this.sliderLightbarGreen_;
+    this.lightbarBlue_ = this.sliderLightbarBlue_;
+    if (pads[0]) {
+      this.motorLeft_ = pads[0].buttons[6].value * 0xFF;
+      this.motorRight_ = pads[0].buttons[7].value * 0xFF;
+      if (pads[0].buttons[0].pressed) {
+        this.playerLeds_ = 0x04;
+        this.lightbarRed_ = 124;
+        this.lightbarGreen_ = 178;
+        this.lightbarBlue_ = 232;
+      } else if (pads[0].buttons[1].pressed) {
+        this.playerLeds_ = 0x0a;
+        this.lightbarRed_ = 255;
+        this.lightbarGreen_ = 102;
+        this.lightbarBlue_ = 102;
+      } else if (pads[0].buttons[2].pressed) {
+        this.playerLeds_ = 0x15;
+        this.lightbarRed_ = 255;
+        this.lightbarGreen_ = 105;
+        this.lightbarBlue_ = 248;
+      } else if (pads[0].buttons[3].pressed) {
+        this.playerLeds_ = 0x1b;
+        this.lightbarRed_ = 64;
+        this.lightbarGreen_ = 226;
+        this.lightbarBlue_ = 160;
+      } else {
+        this.playerLeds_ = this.checkboxPlayerLeds_;
+      }
+    }
+
+    let reportId;
+    let reportData;
+    let common;
+    let r2Effect;
+    let l2Effect;
+    if (this.connectionType_ == 'bluetooth') {
+      reportId = 0x31;
+      reportData = new Uint8Array(77);
+
+      // seq_tag
+      reportData[0] = (this.outputSeq_ << 4);
+      if (++this.outputSeq_ == 16)
+        this.outputSeq_ = 0;
+
+      // tag
+      reportData[1] = 0x10; // DS_OUTPUT_TAG
+
+      common = new DataView(reportData.buffer, 2, 47);
+      r2Effect = new DataView(common.buffer, 12, 8);
+      l2Effect = new DataView(common.buffer, 23, 8);
+    } else if (this.connectionType_ == 'usb') {
+      reportId = 0x02;
+      reportData = new Uint8Array(47);
+
+      common = new DataView(reportData.buffer, 0, 47);
+      r2Effect = new DataView(common.buffer, 10, 8);
+      l2Effect = new DataView(common.buffer, 21, 8);
+    }
+
+    // valid_flag0
+    // bit 0: COMPATIBLE_VIBRATION
+    // bit 1: HAPTICS_SELECT
+    common.setUint8(0, 0xff);
+
+    // valid_flag1
+    // bit 0: MIC_MUTE_LED_CONTROL_ENABLE
+    // bit 1: POWER_SAVE_CONTROL_ENABLE
+    // bit 2: LIGHTBAR_CONTROL_ENABLE
+    // bit 3: RELEASE_LEDS
+    // bit 4: PLAYER_INDICATOR_CONTROL_ENABLE
+    common.setUint8(1, 0xf7);
+
+    // DualShock 4 compatibility mode.
+    common.setUint8(2, this.motorRight_);
+    common.setUint8(3, this.motorLeft_);
+
+    // mute_button_led
+    // 0: mute LED off
+    // 1: mute LED on
+    common.setUint8(8, this.muteLed_);
+
+    // power_save_control
+    // bit 4: POWER_SAVE_CONTROL_MIC_MUTE
+    common.setUint8(9, this.muteLed_ ? 0x00 : 0x10);
+
+    // Right trigger effect
+    // Mode
+    // 0x00: off
+    // 0x01: mode1
+    // 0x02: mode2
+    // 0x05: mode1 + mode4
+    // 0x06: mode2 + mode4
+    // 0x21: mode1 + mode20
+    // 0x25: mode1 + mode4 + mode20
+    // 0x26: mode2 + mode4 + mode20
+    // 0xFC: calibration
+    r2Effect.setUint8(0, this.r2EffectMode_);
+
+    // Effect parameter 1
+    // start of resistance section
+    r2Effect.setUint8(1, this.r2EffectParam1_);
+
+    // Effect parameter 2
+    // mode1: amount of force exerted
+    // mode2: end of resistance section
+    // mode4 + mode20: flags
+    //   bit 2: do not pause effect when fully pressed
+    r2Effect.setUint8(2, this.r2EffectParam2_);
+
+    // Effect parameter 3
+    // mode2: force exerted
+    r2Effect.setUint8(3, this.r2EffectParam3_);
+
+    // Effect effect parameter 4
+    // mode4 + mode20: strength near release state
+    r2Effect.setUint8(4, this.r2EffectParam4_);
+
+    // Effect parameter 5
+    // mode4 + mode20: strength near middle
+    r2Effect.setUint8(5, this.r2EffectParam5_);
+
+    // Effect parameter 6
+    // mode4 + mode20: at pressed state
+    r2Effect.setUint8(6, this.r2EffectParam6_);
+
+    // Effect parameter 7
+    // mode4 + mode20: effect actuation frequency in Hz
+    r2Effect.setUint8(7, this.r2EffectParam7_);
+
+    // Left trigger effect
+    // Mode
+    // 0x00: off
+    // 0x01: mode1
+    // 0x02: mode2
+    // 0x05: mode1 + mode4
+    // 0x06: mode2 + mode4
+    // 0x21: mode1 + mode20
+    // 0x25: mode1 + mode4 + mode20
+    // 0x26: mode2 + mode4 + mode20
+    // 0xFC: calibration
+    l2Effect.setUint8(0, this.l2EffectMode_);
+
+    // Effect parameter 1
+    // start of resistance section
+    l2Effect.setUint8(1, this.l2EffectParam1_);
+
+    // Effect parameter 2
+    // mode1: amount of force exerted
+    // mode2: end of resistance section
+    // mode4 + mode20: flags
+    //   bit 2: do not pause effect when fully pressed
+    l2Effect.setUint8(2, this.l2EffectParam2_);
+
+    // Effect parameter 3
+    // mode2: force exerted
+    l2Effect.setUint8(3, this.l2EffectParam3_);
+
+    // Effect effect parameter 4
+    // mode4 + mode20: strength near release state
+    l2Effect.setUint8(4, this.l2EffectParam4_);
+
+    // Effect parameter 5
+    // mode4 + mode20: strength near middle
+    l2Effect.setUint8(5, this.l2EffectParam5_);
+
+    // Effect parameter 6
+    // mode4 + mode20: at pressed state
+    l2Effect.setUint8(6, this.l2EffectParam6_);
+
+    // Effect parameter 7
+    // mode4 + mode20: effect actuation frequency in Hz
+    l2Effect.setUint8(7, this.l2EffectParam7_);
+
+    // valid_flag2
+    // bit 1: LIGHTBAR_SETUP_CONTROL_ENABLE
+    common.setUint8(39, 0x02);
+
+    // lightbar_setup
+    // 1: Disable LEDs
+    // 2: Enable LEDs
+    common.setUint8(41, 0x02);
+
+    // player_leds
+    common.setUint8(43, this.playerLeds_);
+
+    // Lightbar RGB
+    common.setUint8(44, this.lightbarRed_);
+    common.setUint8(45, this.lightbarGreen_);
+    common.setUint8(46, this.lightbarBlue_);
+
+    // fill CRC32
+    if (this.connectionType_ == 'bluetooth') {
+      fillDualSenseChecksum(reportId, reportData);
+    }
+
+    // Update UI
+    let reportString = `${hex8(reportId)} `;
+    for (const byte of reportData)
+      reportString += `${hex8(byte)} `;
+    outputReportTextArea.value = reportString;
+
+    // Send output report
+    try {
+      await this.device_.sendReport(reportId, reportData);
+    } catch (error) {
+      console.log('Failed to write DualSense output report');
+      return false;
+    }
+
+    return true;
+  }
 }
 
-async function requestDevice() {
+const requestDevice = async () => {
   let requestOptions = {
     filters: [
       { vendorId: VENDOR_ID_SONY, productId: PRODUCT_ID_DUAL_SENSE,
@@ -568,20 +1082,67 @@ async function requestDevice() {
   } catch(e) {}
 
   if (!device)
-    return null;
+    return;
 
   if (!device.opened) {
     await device.open();
     if (!device.opened) {
       console.log('Failed to open ' + device.productName);
-      return null;
+      return;
     }
   }
 
-  dshid = new DualSenseHid(device);
-  await dshid.initialize();
-  return dshid;
+  console.log('Opened DualSense');
+  window.dshid = new DualSenseHid(device);
+  window.dshid.initialize();
 }
+
+const onRAF = async () => {
+  window.requestAnimationFrame(onRAF);
+  if (window.dshid !== undefined) {
+    const sent = await window.dshid.sendOutputReport();
+    if (!sent)
+      window.dshid.onConnectionError();
+  }
+};
+window.requestAnimationFrame(onRAF);
+
+const checkForGrantedDevices = async () => {
+  if (window.dshid !== undefined && !window.dshid.opened) {
+    console.log('DualSense disconnected');
+    window.dshid.onConnectionError();
+  }
+
+  if (window.dshid !== undefined)
+    return;
+
+  console.log('Checking for a connected DualSense');
+  // Check if we already have permissions for a DualSense device.
+  const devices = await navigator.hid.getDevices();
+  for (const device of devices) {
+    if (device.vendorId == VENDOR_ID_SONY && device.productId == PRODUCT_ID_DUAL_SENSE) {
+      if (!device.opened) {
+        await device.open();
+        if (!device.opened)
+          continue;
+      }
+
+      console.log('Opened DualSense');
+      window.dshid = new DualSenseHid(device);
+      window.dshid.initialize();
+      return;
+    }
+  }
+  console.log('No DualSense found');
+};
+
+window.addEventListener('DOMContentLoaded', async e => {
+  if (window.dshid === undefined)
+    checkForGrantedDevices();
+
+  navigator.hid.onconnect = checkForGrantedDevices;
+  navigator.hid.ondisconnect = checkForGrantedDevices;
+});
 
 </script>
 </body>
