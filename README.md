@@ -2,7 +2,7 @@
 
 [Product page](https://www.playstation.com/en-us/accessories/dualsense-wireless-controller/)
 
-[DualSense explorer tool](dualsense-explorer.html)
+[DualSense explorer tool](https://nondebug.github.io/dualsense/dualsense-explorer.html)
 
 ## Inputs
 
