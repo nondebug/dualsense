@@ -111,6 +111,7 @@ Connection type: <input type="text" id="connectiontype" style="width:100;" disab
 <h3>Output report</h3>
 <textarea id="outputreport" cols="48" rows="6" disabled></textarea><br />
 
+<input type="range" id="lightbarBright" min="0" max="255" value="255">Lightbar Brightness<br />
 <input type="range" id="lightbarr" min="0" max="255" value="255">Lightbar Red<br />
 <input type="range" id="lightbarg" min="0" max="255" value="255">Lightbar Green<br />
 <input type="range" id="lightbarb" min="0" max="255" value="255">Lightbar Blue<br />
@@ -222,6 +223,7 @@ const batteryLevelText = document.getElementById('batterylevel');
 
 const outputReportTextArea = document.getElementById('outputreport');
 
+const lightbarBrightSlider = document.getElementById('lightbarBright');
 const lightbarRedSlider = document.getElementById('lightbarr');
 const lightbarGreenSlider = document.getElementById('lightbarg');
 const lightbarBlueSlider = document.getElementById('lightbarb');
@@ -320,6 +322,7 @@ class DualSenseHid {
 
     // UI controls that affect the output report.
     this.checkboxPlayerLeds_ = 0x00;
+    this.sliderLightbarBright_ = 0xFF;
     this.sliderLightbarRed_ = 0xFF;
     this.sliderLightbarGreen_ = 0xFF;
     this.sliderLightbarBlue_ = 0xFF;
@@ -346,6 +349,7 @@ class DualSenseHid {
     this.r2EffectParam5_ = 0x00;
     this.r2EffectParam6_ = 0x00;
     this.r2EffectParam7_ = 0x00;
+    this.lightbarBright_ = 0xFF;
     this.lightbarRed_ = 0xFF;
     this.lightbarGreen_ = 0xFF;
     this.lightbarBlue_ = 0xFF;
@@ -402,6 +406,11 @@ class DualSenseHid {
       this.muteLed_ = muteLedCheckbox.checked ? 0x01 : 0x00;
     };
     muteLedCheckbox.onchange = onMuteLedChanged;
+
+    const onLightbarBrightnessChanged = e => {
+      this.sliderLightbarBright_ = lightbarBrightSlider.value;
+    }
+    lightbarBrightSlider.oninput = onLightbarBrightnessChanged;
 
     const onLightbarColorChanged = e => {
       this.sliderLightbarRed_ = lightbarRedSlider.value;
@@ -939,6 +948,7 @@ class DualSenseHid {
 
   async sendOutputReport() {
     const pads = navigator.getGamepads();
+    this.lightbarBright_ = this.sliderLightbarBright_;
     this.lightbarRed_ = this.sliderLightbarRed_;
     this.lightbarGreen_ = this.sliderLightbarGreen_;
     this.lightbarBlue_ = this.sliderLightbarBlue_;
@@ -1121,6 +1131,9 @@ class DualSenseHid {
     // 1: Disable LEDs
     // 2: Enable LEDs
     common.setUint8(41, 0x02);
+
+    // led brightness
+    common.setUint8(42, this.lightbarBright_);
 
     // player_leds
     common.setUint8(43, this.playerLeds_);
