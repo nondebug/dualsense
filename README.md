@@ -4,6 +4,8 @@
 
 [DualSense explorer tool](https://nondebug.github.io/dualsense/dualsense-explorer.html)
 
+[Gamepad Haptics PCM Extension polyfill](https://nondebug.github.io/dualsense/gamepad-haptics-pcm-polyfill/index.html)
+
 ## Inputs
 
 * Thumbsticks (analog): **Left stick**, **Right stick**
