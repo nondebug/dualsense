@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gamepad Haptics PCM demo</title>
+</head>
+<body>
+    Polyfill for <a href="https://cabanier.github.io/gamepad-haptics/">Gamepad Haptics PCM Extension</a><br />
+    <button id="connect-btn">Connect</button><br />
+    <p>Controls:</p>
+    <ul>
+    <li><b>Cross</b> for Stereo PCM
+    </li>
+    <li><b>Square</b> for Left Handle PCM
+    </li>
+    <li><b>Circle</b> for Right Handle PCM
+    </li>
+    <li><b>Triangle</b> or <b>D-pad Up</b> for Reset Vibration
+    </li>
+    <li><b>D-pad Left</b> for Strong Rumble
+    </li>
+    <li><b>D-pad Right</b> for Weak Rumble
+    </li>
+    <li><b>D-pad Down</b> for Strong+Weak Rumble
+    </li>
+    <li><b>Touchpad</b> for Continuous Rumble (X = Strong magnitude, Y = Weak magnitude)
+    </li>
+    </ul>
+    </p>
+    <script src="dualsensehid.js"></script>
+    <script src="polyfill.js"></script>
+    <script src="demo.js"></script>
+</body>
+</html>
