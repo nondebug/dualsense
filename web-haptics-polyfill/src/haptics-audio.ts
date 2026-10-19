@@ -3,11 +3,77 @@
 
 import type { AudioSinkInfo, HapticEffect, TransportType } from './types.ts';
 
+const AUDIO_WORKLET_CODE = `
+  class DualSenseAudioProcessor extends AudioWorkletProcessor {
+    constructor() {
+      super();
+      this.samplesAccumulated = 0;
+      this.bufferL = new Float32Array(1024);
+      this.bufferR = new Float32Array(1024);
+      this.active = true;
+      this.workerPort = null;
+      this.bufferPool = [
+        new Float32Array(2048),
+        new Float32Array(2048),
+        new Float32Array(2048),
+        new Float32Array(2048)
+      ];
+
+      this.port.onmessage = (e) => {
+        if (e.data.action === 'stop') {
+          this.active = false;
+        } else if (e.data.action === 'set-audio-port') {
+          this.workerPort = e.data.port;
+          this.workerPort.onmessage = (we) => {
+            if (we.data.action === 'recycle-buffer' && we.data.buffer) {
+              this.bufferPool.push(new Float32Array(we.data.buffer));
+            }
+          };
+        }
+      };
+    }
+
+    process(inputs) {
+      if (!this.active) return false;
+
+      const input = inputs[0];
+      const inputL = input && input[0] ? input[0] : null;
+      const inputR = input && input[1] ? input[1] : inputL;
+
+      for (let i = 0; i < 128; i++) {
+        const sampleL = inputL ? inputL[i] : 0;
+        const sampleR = inputR ? inputR[i] : 0;
+
+        this.bufferL[this.samplesAccumulated] = sampleL;
+        this.bufferR[this.samplesAccumulated] = sampleR;
+        this.samplesAccumulated++;
+
+        if (this.samplesAccumulated === 1024) {
+          const frames = 1024;
+          const pcm = this.bufferPool.pop() || new Float32Array(2048);
+          for (let s = 0; s < frames; s++) {
+            pcm[s * 2] = this.bufferL[s];
+            pcm[s * 2 + 1] = this.bufferR[s];
+          }
+          if (this.workerPort) {
+            this.workerPort.postMessage({ type: 'audio-chunk', pcm, frames }, [pcm.buffer]);
+          }
+          this.samplesAccumulated = 0;
+        }
+      }
+      return true;
+    }
+  }
+  registerProcessor('dualsense-audio-processor', DualSenseAudioProcessor);
+`;
+
 export class HapticsAudioEngine {
   ctx: AudioContext | null = null;
   merger: ChannelMergerNode | null = null;
   masterHapticGain: GainNode | null = null;
   limiter: DynamicsCompressorNode | null = null;
+  workletNode: AudioWorkletNode | null = null;
+  keepAliveOsc: OscillatorNode | null = null;
   transport: TransportType = 'usb';
   btWorker: Worker | null = null;
 
@@ -45,6 +111,20 @@ export class HapticsAudioEngine {
     return matches;
   }
 
+  private setupMasterHapticBus(ctx: AudioContext): void {
+    // Master Limiter to prevent clipping under additive mixing
+    this.limiter = ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -3.0; // dB
+    this.limiter.knee.value = 6.0;
+    this.limiter.ratio.value = 20.0;
+    this.limiter.attack.value = 0.001; // 1 ms
+    this.limiter.release.value = 0.05; // 50 ms
+
+    this.masterHapticGain = ctx.createGain();
+    this.masterHapticGain.gain.value = 1.0;
+    this.masterHapticGain.connect(this.limiter);
+  }
+
   async initializeUSB(sinkId: string): Promise<{ success: boolean; channels: number; error?: string }> {
     this.transport = 'usb';
     try {
@@ -74,21 +154,11 @@ export class HapticsAudioEngine {
       this.merger = this.ctx.createChannelMerger(4);
       this.merger.connect(this.ctx.destination);
 
-      // Master Limiter to prevent clipping under additive mixing
-      this.limiter = this.ctx.createDynamicsCompressor();
-      this.limiter.threshold.value = -3.0; // dB
-      this.limiter.knee.value = 6.0;
-      this.limiter.ratio.value = 20.0;
-      this.limiter.attack.value = 0.001; // 1 ms
-      this.limiter.release.value = 0.05; // 50 ms
-
-      this.masterHapticGain = this.ctx.createGain();
-      this.masterHapticGain.gain.value = 1.0;
+      this.setupMasterHapticBus(this.ctx);
 
       // Additive bus -> Limiter -> Channels 2 & 3 (Rear L/R Voice-Coils)
-      this.masterHapticGain.connect(this.limiter);
-      this.limiter.connect(this.merger, 0, 2);
-      this.limiter.connect(this.merger, 0, 3);
+      this.limiter!.connect(this.merger, 0, 2);
+      this.limiter!.connect(this.merger, 0, 3);
 
       await this.ctx.resume();
       return { success: true, channels: maxChannels };
@@ -101,48 +171,80 @@ export class HapticsAudioEngine {
     }
   }
 
-  initializeBluetooth(hidDevice: HIDDevice): void {
+  async initializeBluetooth(hidDevice: HIDDevice): Promise<void> {
     this.transport = 'bluetooth';
+
+    if (!this.ctx || this.ctx.state === 'closed') {
+      this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)({
+        sampleRate: 48000,
+        latencyHint: 'interactive'
+      });
+    }
+    if (this.ctx.state === 'suspended') {
+      await this.ctx.resume();
+    }
+
+    this.setupMasterHapticBus(this.ctx);
+
+    // Keep upstream Web Audio graph continuously pulling 128-sample blocks even between effects
+    const keepAliveOsc = this.ctx.createOscillator();
+    const keepAliveGain = this.ctx.createGain();
+    keepAliveGain.gain.value = 0.0;
+    keepAliveOsc.connect(keepAliveGain);
+    keepAliveGain.connect(this.masterHapticGain!);
+    keepAliveOsc.start();
+    this.keepAliveOsc = keepAliveOsc;
+
     if (!this.btWorker) {
       this.btWorker = new Worker(new URL('./bt-audio-worker.ts', import.meta.url), {
         type: 'module'
       });
     }
 
-    const deviceMatch = {
-      vendorId: hidDevice.vendorId,
-      productId: hidDevice.productId,
-      collections: hidDevice.collections.map((c: any) => ({
-        usagePage: c.usagePage,
-        usage: c.usage
-      }))
-    };
+    if (this.ctx.audioWorklet) {
+      const blob = new Blob([AUDIO_WORKLET_CODE], { type: 'application/javascript' });
+      const workletUrl = URL.createObjectURL(blob);
+      await this.ctx.audioWorklet.addModule(workletUrl);
+      URL.revokeObjectURL(workletUrl);
 
-    this.btWorker.postMessage({ type: 'init', deviceMatch });
+      this.workletNode = new AudioWorkletNode(this.ctx, 'dualsense-audio-processor');
+      this.limiter!.connect(this.workletNode);
+
+      const dummyGain = this.ctx.createGain();
+      dummyGain.gain.value = 0.0;
+      this.workletNode.connect(dummyGain);
+      dummyGain.connect(this.ctx.destination);
+
+      const channel = new MessageChannel();
+      const deviceMatch = {
+        vendorId: hidDevice.vendorId,
+        productId: hidDevice.productId,
+        collections: hidDevice.collections.map((c: any) => ({
+          usagePage: c.usagePage,
+          usage: c.usage
+        }))
+      };
+
+      this.btWorker.postMessage({ type: 'init', deviceMatch, port: channel.port2 }, [channel.port2]);
+      this.workletNode.port.postMessage({ action: 'set-audio-port', port: channel.port1 }, [
+        channel.port1
+      ]);
+    }
   }
 
   playEffect(effect: HapticEffect, intensity = 1.0): void {
     const clampedIntensity = Math.max(0, Math.min(1, intensity));
     if (clampedIntensity <= 0) return;
 
-    if (this.transport === 'bluetooth' && this.btWorker) {
-      this.btWorker.postMessage({
-        type: 'play',
-        effect,
-        intensity: clampedIntensity
-      });
-      return;
-    }
-
     if (!this.ctx || !this.masterHapticGain) return;
     if (this.ctx.state === 'suspended') {
       this.ctx.resume();
     }
 
-    this.synthesizeEffectUSB(effect, clampedIntensity);
+    this.synthesizeEffect(effect, clampedIntensity);
   }
 
-  private synthesizeEffectUSB(effect: HapticEffect, intensity: number): void {
+  private synthesizeEffect(effect: HapticEffect, intensity: number): void {
     if (!this.ctx || !this.masterHapticGain) return;
 
     const ctx = this.ctx;
@@ -288,6 +390,20 @@ export class HapticsAudioEngine {
   }
 
   disconnect(): void {
+    if (this.keepAliveOsc) {
+      try {
+        this.keepAliveOsc.stop();
+        this.keepAliveOsc.disconnect();
+      } catch (e) {}
+      this.keepAliveOsc = null;
+    }
+    if (this.workletNode) {
+      this.workletNode.port.postMessage({ action: 'stop' });
+      try {
+        this.workletNode.disconnect();
+      } catch (e) {}
+      this.workletNode = null;
+    }
     if (this.ctx) {
       try {
         this.ctx.close();
