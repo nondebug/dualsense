@@ -1,0 +1,69 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: "web-haptics-polyfill/package-lock.json"
+
+      - name: Build web-haptics-polyfill
+        working-directory: web-haptics-polyfill
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Assemble GitHub Pages site
+        run: |
+          mkdir -p _site
+
+          # 1. Copy all existing root web content and directories (preserving existing URLs)
+          rsync -av \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='web-haptics-polyfill' \
+            --exclude='_site' \
+            ./ _site/
+
+          # 2. Mount the compiled web-haptics-polyfill app into web-haptics-polyfill/
+          mkdir -p _site/web-haptics-polyfill
+          cp -r web-haptics-polyfill/dist/* _site/web-haptics-polyfill/
+
+          # 3. Disable Jekyll so all static assets and subfolders are served directly
+          touch _site/.nojekyll
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "./_site"
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
