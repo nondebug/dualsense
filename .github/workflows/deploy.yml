@@ -28,13 +28,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: "npm"
-          cache-dependency-path: "web-haptics-polyfill/package-lock.json"
 
       - name: Build web-haptics-polyfill
         working-directory: web-haptics-polyfill
         run: |
-          npm ci || npm install
+          npm install
           npm run build
 
       - name: Assemble GitHub Pages site
