@@ -5,10 +5,10 @@ import './types.ts';
 import { fillDualSenseChecksum } from './dualsense.ts';
 
 let device: HIDDevice | null = null;
-let isRunning = false;
+let isLoopRunning = false;
 let isSending = false;
-let nextScheduledTime = 0;
 let audioSeq = 0;
+let trailingSilenceFrames = 0;
 
 // DualSense Bluetooth Audio Parameters
 // 3,000 Hz sample rate, 32 samples per report = 10.6667 ms per report
@@ -16,7 +16,10 @@ const SAMPLE_RATE = 3000;
 const SAMPLES_PER_REPORT = 32;
 const PACKET_DURATION_MS = (SAMPLES_PER_REPORT / SAMPLE_RATE) * 1000; // 10.6667 ms
 
-// Active synthesizer state
+// Number of trailing silence packets sent after an effect finishes to settle the DAC
+// before letting the controller FIFO drain to empty.
+const TRAILING_SILENCE_COUNT = 4;
+
 interface ActiveWaveform {
   effect: string;
   frequency: number;
@@ -61,46 +64,55 @@ self.onmessage = async (e: MessageEvent) => {
     }
 
     if (device) {
-      startAudioLoop();
-      console.log('DualSense Web Worker: steady 3kHz BT audio haptics stream active');
+      console.log('DualSense Web Worker: Head-of-Line Low-Latency BT Haptics Engine ready');
     }
   } else if (msg.type === 'play') {
     const { effect, intensity } = msg;
     enqueueWaveform(effect, Math.max(0, Math.min(1, intensity ?? 1)));
+    triggerBurst();
   } else if (msg.type === 'stop') {
     activeWaves.length = 0;
+    trailingSilenceFrames = 0;
+    isLoopRunning = false;
   }
 };
 
-function startAudioLoop(): void {
-  if (isRunning) return;
-  isRunning = true;
-  nextScheduledTime = performance.now();
-  scheduleNextFrame();
+function triggerBurst(): void {
+  trailingSilenceFrames = TRAILING_SILENCE_COUNT;
+  if (isLoopRunning) return;
+  if (!device || !device.opened) return;
+
+  isLoopRunning = true;
+  // Fire immediately without waiting for a timer tick
+  runBurstStep();
 }
 
-function scheduleNextFrame(): void {
-  if (!isRunning) return;
-  nextScheduledTime += PACKET_DURATION_MS;
-  const now = performance.now();
-  // Self-adjusting drift compensation
-  const delay = Math.max(0, nextScheduledTime - now);
-  self.setTimeout(runAudioFrame, delay);
-}
-
-async function runAudioFrame(): Promise<void> {
-  if (!isRunning || !device || !device.opened) {
-    scheduleNextFrame();
+async function runBurstStep(): Promise<void> {
+  if (!isLoopRunning || !device || !device.opened) {
+    isLoopRunning = false;
     return;
+  }
+
+  // Check if all waveforms and trailing silence have finished
+  if (activeWaves.length === 0) {
+    if (trailingSilenceFrames > 0) {
+      trailingSilenceFrames--;
+    } else {
+      // Burst finished! Stop streaming so the controller FIFO drains to empty.
+      // This guarantees the next pulse will land at the very head of the buffer with 0ms delay.
+      isLoopRunning = false;
+      return;
+    }
   }
 
   // Prevent overlapping concurrent sendReport calls on Windows Bluetooth stack
   if (isSending) {
-    scheduleNextFrame();
+    self.setTimeout(runBurstStep, 2);
     return;
   }
 
   isSending = true;
+  const startTime = performance.now();
   try {
     const reportData = buildReport0x32();
     await device.sendReport(0x32, reportData as any);
@@ -108,7 +120,11 @@ async function runAudioFrame(): Promise<void> {
     // Ignore transient transport hiccups
   } finally {
     isSending = false;
-    scheduleNextFrame();
+    if (isLoopRunning) {
+      const elapsed = performance.now() - startTime;
+      const nextDelay = Math.max(0, PACKET_DURATION_MS - elapsed);
+      self.setTimeout(runBurstStep, nextDelay);
+    }
   }
 }
 
@@ -132,7 +148,7 @@ function enqueueWaveform(effect: string, intensity: number): void {
       activeWaves.push({
         effect: 'hint',
         frequency: 150,
-        durationMs: 45,
+        durationMs: 40,
         elapsedMs: 0,
         intensity: scaledAmp * 0.4,
         phase: 0,
@@ -143,7 +159,7 @@ function enqueueWaveform(effect: string, intensity: number): void {
       activeWaves.push({
         effect: 'edge',
         frequency: 120,
-        durationMs: 70,
+        durationMs: 65,
         elapsedMs: 0,
         intensity: scaledAmp,
         phase: 0,
@@ -155,8 +171,8 @@ function enqueueWaveform(effect: string, intensity: number): void {
       activeWaves.push({
         effect: 'align',
         frequency: 220,
-        sweepEnd: 140,
-        durationMs: 40,
+        sweepEnd: 130,
+        durationMs: 30,
         elapsedMs: 0,
         intensity: scaledAmp,
         phase: 0,
@@ -166,9 +182,9 @@ function enqueueWaveform(effect: string, intensity: number): void {
     case 'success':
       activeWaves.push({
         effect: 'success',
-        frequency: 160,
+        frequency: 150,
         sweepEnd: 220,
-        durationMs: 130,
+        durationMs: 120,
         elapsedMs: 0,
         intensity: scaledAmp,
         phase: 0,
@@ -178,8 +194,8 @@ function enqueueWaveform(effect: string, intensity: number): void {
     case 'error':
       activeWaves.push({
         effect: 'error',
-        frequency: 100,
-        durationMs: 160,
+        frequency: 95,
+        durationMs: 150,
         elapsedMs: 0,
         intensity: scaledAmp,
         phase: 0,
@@ -215,11 +231,11 @@ function buildReport0x32(): Uint8Array {
 
       let env = 1.0;
       if (wave.type === 'sine') {
-        // Fast 4ms attack, smooth exponential decay
-        const attackProgress = Math.min(1, currentMs / 4);
+        // Fast 3ms attack, smooth exponential decay
+        const attackProgress = Math.min(1, currentMs / 3);
         env = attackProgress * Math.exp(-progress * 3.5);
       } else if (wave.type === 'harmonic') {
-        const attackProgress = Math.min(1, currentMs / 5);
+        const attackProgress = Math.min(1, currentMs / 4);
         env = attackProgress * Math.max(0, 1 - progress);
       } else if (wave.type === 'sweep') {
         env = Math.sin(progress * Math.PI);
@@ -227,7 +243,7 @@ function buildReport0x32(): Uint8Array {
         const inBurst = currentMs % 45 < (wave.burstCadence ?? 25);
         env = inBurst ? 1.0 : 0.0;
       } else if (wave.type === 'double-pulse') {
-        // Ascending double pulse: Pulse 1 (0-35ms), gap (35-60ms), Pulse 2 (60-120ms)
+        // Double pulse: Pulse 1 (0-35ms), gap (35-60ms), Pulse 2 (60-120ms)
         if (currentMs < 35) {
           env = Math.sin((currentMs / 35) * Math.PI);
         } else if (currentMs >= 60 && currentMs < 120) {
