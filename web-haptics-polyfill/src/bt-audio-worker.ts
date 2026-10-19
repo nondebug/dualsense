@@ -5,8 +5,16 @@ import './types.ts';
 import { fillDualSenseChecksum } from './dualsense.ts';
 
 let device: HIDDevice | null = null;
-let audioTimer: number | null = null;
+let isRunning = false;
+let isSending = false;
+let nextScheduledTime = 0;
 let audioSeq = 0;
+
+// DualSense Bluetooth Audio Parameters
+// 3,000 Hz sample rate, 32 samples per report = 10.6667 ms per report
+const SAMPLE_RATE = 3000;
+const SAMPLES_PER_REPORT = 32;
+const PACKET_DURATION_MS = (SAMPLES_PER_REPORT / SAMPLE_RATE) * 1000; // 10.6667 ms
 
 // Active synthesizer state
 interface ActiveWaveform {
@@ -18,7 +26,7 @@ interface ActiveWaveform {
   elapsedMs: number;
   intensity: number;
   phase: number;
-  type: 'sine' | 'harmonic' | 'sweep' | 'burst';
+  type: 'sine' | 'harmonic' | 'sweep' | 'burst' | 'double-pulse';
   burstCadence?: number;
 }
 
@@ -53,12 +61,8 @@ self.onmessage = async (e: MessageEvent) => {
     }
 
     if (device) {
-      if (audioTimer !== null) {
-        clearInterval(audioTimer);
-      }
-      // Stream continuously at 10 ms interval (100 Hz report rate)
-      audioTimer = self.setInterval(processAudioLoop, 10);
-      console.log('DualSense Web Worker: continuous BT audio haptics stream active');
+      startAudioLoop();
+      console.log('DualSense Web Worker: steady 3kHz BT audio haptics stream active');
     }
   } else if (msg.type === 'play') {
     const { effect, intensity } = msg;
@@ -67,6 +71,46 @@ self.onmessage = async (e: MessageEvent) => {
     activeWaves.length = 0;
   }
 };
+
+function startAudioLoop(): void {
+  if (isRunning) return;
+  isRunning = true;
+  nextScheduledTime = performance.now();
+  scheduleNextFrame();
+}
+
+function scheduleNextFrame(): void {
+  if (!isRunning) return;
+  nextScheduledTime += PACKET_DURATION_MS;
+  const now = performance.now();
+  // Self-adjusting drift compensation
+  const delay = Math.max(0, nextScheduledTime - now);
+  self.setTimeout(runAudioFrame, delay);
+}
+
+async function runAudioFrame(): Promise<void> {
+  if (!isRunning || !device || !device.opened) {
+    scheduleNextFrame();
+    return;
+  }
+
+  // Prevent overlapping concurrent sendReport calls on Windows Bluetooth stack
+  if (isSending) {
+    scheduleNextFrame();
+    return;
+  }
+
+  isSending = true;
+  try {
+    const reportData = buildReport0x32();
+    await device.sendReport(0x32, reportData as any);
+  } catch (e) {
+    // Ignore transient transport hiccups
+  } finally {
+    isSending = false;
+    scheduleNextFrame();
+  }
+}
 
 function enqueueWaveform(effect: string, intensity: number): void {
   // Stevens' Power law scaling
@@ -77,7 +121,7 @@ function enqueueWaveform(effect: string, intensity: number): void {
       activeWaves.push({
         effect: 'tick',
         frequency: 150,
-        durationMs: 20,
+        durationMs: 35,
         elapsedMs: 0,
         intensity: scaledAmp,
         phase: 0,
@@ -88,7 +132,7 @@ function enqueueWaveform(effect: string, intensity: number): void {
       activeWaves.push({
         effect: 'hint',
         frequency: 150,
-        durationMs: 35,
+        durationMs: 45,
         elapsedMs: 0,
         intensity: scaledAmp * 0.4,
         phase: 0,
@@ -99,7 +143,7 @@ function enqueueWaveform(effect: string, intensity: number): void {
       activeWaves.push({
         effect: 'edge',
         frequency: 120,
-        durationMs: 60,
+        durationMs: 70,
         elapsedMs: 0,
         intensity: scaledAmp,
         phase: 0,
@@ -110,9 +154,9 @@ function enqueueWaveform(effect: string, intensity: number): void {
     case 'align':
       activeWaves.push({
         effect: 'align',
-        frequency: 200,
-        sweepEnd: 130,
-        durationMs: 30,
+        frequency: 220,
+        sweepEnd: 140,
+        durationMs: 40,
         elapsedMs: 0,
         intensity: scaledAmp,
         phase: 0,
@@ -122,41 +166,36 @@ function enqueueWaveform(effect: string, intensity: number): void {
     case 'success':
       activeWaves.push({
         effect: 'success',
-        frequency: 140,
-        sweepEnd: 210,
-        durationMs: 90,
+        frequency: 160,
+        sweepEnd: 220,
+        durationMs: 130,
         elapsedMs: 0,
         intensity: scaledAmp,
         phase: 0,
-        type: 'sweep'
+        type: 'double-pulse'
       });
       break;
     case 'error':
       activeWaves.push({
         effect: 'error',
-        frequency: 90,
-        durationMs: 140,
+        frequency: 100,
+        durationMs: 160,
         elapsedMs: 0,
         intensity: scaledAmp,
         phase: 0,
         type: 'burst',
-        burstCadence: 25
+        burstCadence: 30
       });
       break;
   }
 }
 
-async function processAudioLoop(): Promise<void> {
-  if (!device || !device.opened) return;
-
-  const sampleRate = 3000;
-  const numSamples = 32; // 32 samples * 2 bytes = 64 bytes
-  const dt = 1 / sampleRate;
-
+function buildReport0x32(): Uint8Array {
+  const dt = 1 / SAMPLE_RATE;
   const samples = new Uint8Array(64);
   const dataView = new DataView(samples.buffer);
 
-  for (let i = 0; i < numSamples; i++) {
+  for (let i = 0; i < SAMPLES_PER_REPORT; i++) {
     const frameT = i * dt;
     let sampleSum = 0;
 
@@ -176,14 +215,26 @@ async function processAudioLoop(): Promise<void> {
 
       let env = 1.0;
       if (wave.type === 'sine') {
-        env = Math.exp(-progress * 4.5);
+        // Fast 4ms attack, smooth exponential decay
+        const attackProgress = Math.min(1, currentMs / 4);
+        env = attackProgress * Math.exp(-progress * 3.5);
       } else if (wave.type === 'harmonic') {
-        env = Math.max(0, 1 - progress);
+        const attackProgress = Math.min(1, currentMs / 5);
+        env = attackProgress * Math.max(0, 1 - progress);
       } else if (wave.type === 'sweep') {
         env = Math.sin(progress * Math.PI);
       } else if (wave.type === 'burst') {
         const inBurst = currentMs % 45 < (wave.burstCadence ?? 25);
         env = inBurst ? 1.0 : 0.0;
+      } else if (wave.type === 'double-pulse') {
+        // Ascending double pulse: Pulse 1 (0-35ms), gap (35-60ms), Pulse 2 (60-120ms)
+        if (currentMs < 35) {
+          env = Math.sin((currentMs / 35) * Math.PI);
+        } else if (currentMs >= 60 && currentMs < 120) {
+          env = Math.sin(((currentMs - 60) / 60) * Math.PI);
+        } else {
+          env = 0.0;
+        }
       }
 
       let sampleVal = Math.sin(wave.phase);
@@ -194,23 +245,21 @@ async function processAudioLoop(): Promise<void> {
       sampleSum += sampleVal * env * wave.intensity;
     }
 
-    // Master soft-limiter (tanh)
+    // Master soft limiter (tanh)
     const limited = Math.tanh(sampleSum);
     const intVal = Math.max(-32768, Math.min(32767, Math.round(limited * 32767)));
     dataView.setInt16(i * 2, intVal, true);
   }
 
-  // Advance elapsed time for active waveforms
-  const dtBlockMs = (numSamples / sampleRate) * 1000;
+  // Advance elapsed time for active waveforms by exact packet duration
   for (let w = activeWaves.length - 1; w >= 0; w--) {
-    activeWaves[w].elapsedMs += dtBlockMs;
+    activeWaves[w].elapsedMs += PACKET_DURATION_MS;
     if (activeWaves[w].elapsedMs >= activeWaves[w].durationMs) {
       activeWaves.splice(w, 1);
     }
   }
 
   // Construct Report 0x32 (141 bytes total)
-  // Continuous streaming: sends digital silence (zeros) when idle to keep DAC FIFO primed
   const reportData = new Uint8Array(141);
   reportData[0] = 0x00;
 
@@ -232,10 +281,5 @@ async function processAudioLoop(): Promise<void> {
   reportData.set(samples, 12);
 
   fillDualSenseChecksum(0x32, reportData);
-
-  try {
-    await device.sendReport(0x32, reportData);
-  } catch (e) {
-    // Ignore report send errors to prevent console flooding
-  }
+  return reportData;
 }
