@@ -5,18 +5,20 @@ import './types.ts';
 import { fillDualSenseChecksum } from './dualsense.ts';
 
 let device: HIDDevice | null = null;
-let timerId: number | null = null;
+let audioTimer: number | null = null;
 let audioSeq = 0;
 
 // Active synthesizer state
 interface ActiveWaveform {
+  effect: string;
   frequency: number;
+  sweepEnd?: number;
+  harmonicMix?: number;
   durationMs: number;
   elapsedMs: number;
   intensity: number;
+  phase: number;
   type: 'sine' | 'harmonic' | 'sweep' | 'burst';
-  sweepEnd?: number;
-  harmonicMix?: number;
   burstCadence?: number;
 }
 
@@ -30,23 +32,33 @@ self.onmessage = async (e: MessageEvent) => {
     if (!navigator.hid) return;
     const devices = await navigator.hid.getDevices();
 
-    device = devices.find((d: HIDDevice) => {
-      if (d.vendorId !== match.vendorId || d.productId !== match.productId) return false;
-      if (d.collections.length !== match.collections.length) return false;
-      return d.collections.every(
-        (c: any, i: number) =>
-          c.usagePage === match.collections[i].usagePage &&
-          c.usage === match.collections[i].usage
-      );
-    }) || null;
+    // Match the exact HID interface that the main thread opened
+    device =
+      devices.find((d: HIDDevice) => {
+        if (d.vendorId !== match.vendorId || d.productId !== match.productId) return false;
+        if (d.collections.length !== match.collections.length) return false;
+        return d.collections.every(
+          (c: any, i: number) =>
+            c.usagePage === match.collections[i].usagePage &&
+            c.usage === match.collections[i].usage
+        );
+      }) || null;
 
     if (device && !device.opened) {
-      await device.open();
+      try {
+        await device.open();
+      } catch (err) {
+        console.warn('DualSense Worker: device.open() note', err);
+      }
     }
 
-    if (device && timerId === null) {
-      // 10 ms interval = 100 Hz report rate (16 stereo frames @ 1600 Hz)
-      timerId = self.setInterval(processHapticsLoop, 10);
+    if (device) {
+      if (audioTimer !== null) {
+        clearInterval(audioTimer);
+      }
+      // Stream continuously at 10 ms interval (100 Hz report rate)
+      audioTimer = self.setInterval(processAudioLoop, 10);
+      console.log('DualSense Web Worker: continuous BT audio haptics stream active');
     }
   } else if (msg.type === 'play') {
     const { effect, intensity } = msg;
@@ -63,146 +75,146 @@ function enqueueWaveform(effect: string, intensity: number): void {
   switch (effect) {
     case 'tick':
       activeWaves.push({
-        frequency: 160,
-        durationMs: 10,
+        effect: 'tick',
+        frequency: 150,
+        durationMs: 20,
         elapsedMs: 0,
         intensity: scaledAmp,
+        phase: 0,
         type: 'sine'
       });
       break;
     case 'hint':
       activeWaves.push({
+        effect: 'hint',
         frequency: 150,
-        durationMs: 30,
+        durationMs: 35,
         elapsedMs: 0,
-        intensity: scaledAmp * 0.35,
+        intensity: scaledAmp * 0.4,
+        phase: 0,
         type: 'sine'
       });
       break;
     case 'edge':
       activeWaves.push({
-        frequency: 110,
-        durationMs: 50,
+        effect: 'edge',
+        frequency: 120,
+        durationMs: 60,
         elapsedMs: 0,
         intensity: scaledAmp,
+        phase: 0,
         type: 'harmonic',
-        harmonicMix: 0.25
+        harmonicMix: 0.3
       });
       break;
     case 'align':
       activeWaves.push({
+        effect: 'align',
         frequency: 200,
-        sweepEnd: 140,
-        durationMs: 25,
+        sweepEnd: 130,
+        durationMs: 30,
         elapsedMs: 0,
         intensity: scaledAmp,
+        phase: 0,
         type: 'sweep'
       });
       break;
     case 'success':
       activeWaves.push({
-        frequency: 130,
-        sweepEnd: 170,
-        durationMs: 110,
+        effect: 'success',
+        frequency: 140,
+        sweepEnd: 210,
+        durationMs: 90,
         elapsedMs: 0,
         intensity: scaledAmp,
+        phase: 0,
         type: 'sweep'
       });
       break;
     case 'error':
       activeWaves.push({
-        frequency: 80,
-        durationMs: 130,
+        effect: 'error',
+        frequency: 90,
+        durationMs: 140,
         elapsedMs: 0,
         intensity: scaledAmp,
+        phase: 0,
         type: 'burst',
-        burstCadence: 30
+        burstCadence: 25
       });
       break;
   }
 }
 
-async function processHapticsLoop(): Promise<void> {
+async function processAudioLoop(): Promise<void> {
   if (!device || !device.opened) return;
 
-  const sampleRate = 1600; // 16 stereo frames in 10 ms = 1600 Hz
-  const numFrames = 16;
-  const samples = new Uint8Array(64); // 16 frames * 2 channels * 2 bytes = 64 bytes
+  const sampleRate = 3000;
+  const numSamples = 32; // 32 samples * 2 bytes = 64 bytes
+  const dt = 1 / sampleRate;
+
+  const samples = new Uint8Array(64);
   const dataView = new DataView(samples.buffer);
 
-  let hasSignal = false;
+  for (let i = 0; i < numSamples; i++) {
+    const frameT = i * dt;
+    let sampleSum = 0;
 
-  for (let frame = 0; frame < numFrames; frame++) {
-    const tMs = frame * (1000 / sampleRate);
-    let leftSum = 0;
-    let rightSum = 0;
+    for (const wave of activeWaves) {
+      const currentMs = wave.elapsedMs + frameT * 1000;
+      const progress = Math.min(1, currentMs / wave.durationMs);
 
-    for (let w = activeWaves.length - 1; w >= 0; w--) {
-      const wave = activeWaves[w];
-      const curT = (wave.elapsedMs + tMs) / 1000;
-
-      if (wave.elapsedMs + tMs >= wave.durationMs) {
-        activeWaves.splice(w, 1);
-        continue;
+      let freq = wave.frequency;
+      if (wave.type === 'sweep' && wave.sweepEnd !== undefined) {
+        freq = wave.frequency + (wave.sweepEnd - wave.frequency) * progress;
       }
 
-      hasSignal = true;
-      let val = 0;
-      const progress = (wave.elapsedMs + tMs) / wave.durationMs;
+      wave.phase += 2 * Math.PI * freq * dt;
+      if (wave.phase > 2 * Math.PI) {
+        wave.phase -= 2 * Math.PI;
+      }
 
+      let env = 1.0;
       if (wave.type === 'sine') {
-        const decay = Math.exp(-progress * 4);
-        val = Math.sin(2 * Math.PI * wave.frequency * curT) * wave.intensity * decay;
+        env = Math.exp(-progress * 4.5);
       } else if (wave.type === 'harmonic') {
-        const f1 = Math.sin(2 * Math.PI * wave.frequency * curT);
-        const f2 = Math.sin(2 * Math.PI * wave.frequency * 2 * curT);
-        val = (f1 + (wave.harmonicMix ?? 0.25) * f2) * wave.intensity;
+        env = Math.max(0, 1 - progress);
       } else if (wave.type === 'sweep') {
-        const startF = wave.frequency;
-        const endF = wave.sweepEnd ?? startF;
-        const instantF = startF + (endF - startF) * progress;
-        val = Math.sin(2 * Math.PI * instantF * curT) * wave.intensity;
+        env = Math.sin(progress * Math.PI);
       } else if (wave.type === 'burst') {
-        // 30 ms burst, 18 ms silence
-        const burstPeriod = 48;
-        const inBurst = (wave.elapsedMs + tMs) % burstPeriod < (wave.burstCadence ?? 30);
-        if (inBurst) {
-          val = Math.sin(2 * Math.PI * wave.frequency * curT) * wave.intensity;
-          val = val > 0 ? 0.9 : -0.9; // Square saturation
-        }
+        const inBurst = currentMs % 45 < (wave.burstCadence ?? 25);
+        env = inBurst ? 1.0 : 0.0;
       }
 
-      leftSum += val;
-      rightSum += val;
+      let sampleVal = Math.sin(wave.phase);
+      if (wave.type === 'harmonic' && wave.harmonicMix) {
+        sampleVal = (sampleVal + wave.harmonicMix * Math.sin(wave.phase * 2)) / (1 + wave.harmonicMix);
+      }
+
+      sampleSum += sampleVal * env * wave.intensity;
     }
 
     // Master soft-limiter (tanh)
-    const limitedLeft = Math.tanh(leftSum);
-    const limitedRight = Math.tanh(rightSum);
-
-    const intLeft = Math.max(-32768, Math.min(32767, Math.round(limitedLeft * 32767)));
-    const intRight = Math.max(-32768, Math.min(32767, Math.round(limitedRight * 32767)));
-
-    // Interleaved stereo: Left (channel 2), Right (channel 3)
-    dataView.setInt16(frame * 4, intLeft, true);
-    dataView.setInt16(frame * 4 + 2, intRight, true);
+    const limited = Math.tanh(sampleSum);
+    const intVal = Math.max(-32768, Math.min(32767, Math.round(limited * 32767)));
+    dataView.setInt16(i * 2, intVal, true);
   }
 
-  // Advance wave elapsed times by 10 ms
-  for (const wave of activeWaves) {
-    wave.elapsedMs += 10;
+  // Advance elapsed time for active waveforms
+  const dtBlockMs = (numSamples / sampleRate) * 1000;
+  for (let w = activeWaves.length - 1; w >= 0; w--) {
+    activeWaves[w].elapsedMs += dtBlockMs;
+    if (activeWaves[w].elapsedMs >= activeWaves[w].durationMs) {
+      activeWaves.splice(w, 1);
+    }
   }
 
-  if (!hasSignal && activeWaves.length === 0) {
-    // Only send silence if needed to clear DAC or occasionally keep alive
-    return;
-  }
-
-  // Construct Report 0x32
+  // Construct Report 0x32 (141 bytes total)
+  // Continuous streaming: sends digital silence (zeros) when idle to keep DAC FIFO primed
   const reportData = new Uint8Array(141);
   reportData[0] = 0x00;
 
-  // Header 0x91 0x07
+  // Sub-packet 1: Audio control header (Length 7)
   reportData[1] = 0x91;
   reportData[2] = 0x07;
   reportData[3] = 0xfe;
@@ -214,7 +226,7 @@ async function processHapticsLoop(): Promise<void> {
   reportData[9] = audioSeq;
   audioSeq = (audioSeq + 1) % 256;
 
-  // PCM Payload Header 0x92 0x40
+  // Sub-packet 2: PCM Payload Header (64 bytes = 32 samples)
   reportData[10] = 0x92;
   reportData[11] = 0x40;
   reportData.set(samples, 12);
