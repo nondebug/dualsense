@@ -193,6 +193,10 @@ function fillHapticBlocks(report: Uint8Array, pcmFrame: Float32Array | null): nu
       if (Math.abs(rVal) > Math.abs(peakRight)) peakRight = rVal;
     }
 
+    const scale = 8.0;
+    peakLeft *= scale;
+    peakRight *= scale;
+
     if (Math.abs(peakLeft) < 0.005) peakLeft = 0;
     if (Math.abs(peakRight) < 0.005) peakRight = 0;
     if (peakLeft > 1.0) peakLeft = 1.0;
