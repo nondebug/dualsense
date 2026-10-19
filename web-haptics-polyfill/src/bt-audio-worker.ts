@@ -21,8 +21,7 @@ const DT_SAMPLE = 1 / SYNTH_SAMPLE_RATE;
 
 // Exact 21.333333 ms interval (1024 samples @ 48 kHz = 2 haptic blocks of 10.6667 ms each)
 const AUDIO_INTERVAL_MS = 21.333333;
-// Only send periodic state keepalive when idle so it never collides with active haptics
-const STATE_KEEPALIVE_INTERVAL_MS = 2000;
+const STATE_HEARTBEAT_INTERVAL_MS = 250;
 
 const audioReportBuffer = new Uint8Array(FULL_REPORT_LENGTH);
 const stateReportBuffer = new Uint8Array(STATE_REPORT_LENGTH);
@@ -105,9 +104,21 @@ function isDualSenseBluetooth(device: HIDDevice): boolean {
 
 // --- State Report 0x32 (0x90, 0x3F) ---
 // Enables Audio Control & Haptic Low-Pass Filter, disables classic rumble emulation
-function buildStateReport(): void {
+function buildStateReport(energy = 0): void {
   const report = stateReportBuffer;
   report.fill(0);
+
+  const intensity = Math.min(1.0, energy / 10);
+  const coldR = 0;
+  const coldG = 144;
+  const coldB = 255;
+  const hotR = 30;
+  const hotG = 255;
+  const hotB = 120;
+
+  const colorR = Math.sqrt(0.5 * (hotR * hotR * intensity + coldR * coldR * (1 - intensity)));
+  const colorG = Math.sqrt(0.5 * (hotG * hotG * intensity + coldG * coldG * (1 - intensity)));
+  const colorB = Math.sqrt(0.5 * (hotB * hotB * intensity + coldB * coldB * (1 - intensity)));
 
   report[0] = STATE_REPORT_ID;
   report[1] = getNextSequenceByte();
@@ -128,9 +139,9 @@ function buildStateReport(): void {
   report[state + 41] = 0x02; // LightFadeAnimation
   report[state + 42] = 0x00; // LightBrightness
   report[state + 43] = (1 << 2) | (1 << 5); // Center player LED + fade
-  report[state + 44] = 0x00; // Red
-  report[state + 45] = 0x90; // Green
-  report[state + 46] = 0xff; // Blue
+  report[state + 44] = Math.round(colorR) & 0xff;
+  report[state + 45] = Math.round(colorG) & 0xff;
+  report[state + 46] = Math.round(colorB) & 0xff;
 
   fillSonyCrc(report);
   lastStateReportTimestamp = performance.now();
@@ -170,22 +181,21 @@ function synthesizePcmFrame(output: Float32Array): boolean {
 
       let env = 1.0;
       if (wave.type === 'sine') {
-        // Fast 1.5ms attack + smooth cosine decay so LRA mass receives full impulse energy
-        const attack = Math.min(1, currentMs / 1.5);
-        env = attack * Math.cos(progress * Math.PI * 0.5);
+        const attack = Math.min(1, currentMs / 3);
+        env = attack * Math.exp(-progress * 3.5);
       } else if (wave.type === 'harmonic') {
-        const attack = Math.min(1, currentMs / 2);
-        env = attack * Math.cos(progress * Math.PI * 0.5);
+        const attack = Math.min(1, currentMs / 4);
+        env = attack * Math.max(0, 1 - progress);
       } else if (wave.type === 'sweep') {
         env = Math.sin(progress * Math.PI);
       } else if (wave.type === 'burst') {
-        const inBurst = currentMs % 45 < (wave.burstCadence ?? 28);
+        const inBurst = currentMs % 45 < (wave.burstCadence ?? 25);
         env = inBurst ? 1.0 : 0.0;
       } else if (wave.type === 'double-pulse') {
-        if (currentMs < 40) {
-          env = Math.sin((currentMs / 40) * Math.PI);
-        } else if (currentMs >= 60 && currentMs < 125) {
-          env = Math.sin(((currentMs - 60) / 65) * Math.PI);
+        if (currentMs < 35) {
+          env = Math.sin((currentMs / 35) * Math.PI);
+        } else if (currentMs >= 60 && currentMs < 120) {
+          env = Math.sin(((currentMs - 60) / 60) * Math.PI);
         } else {
           env = 0.0;
         }
@@ -197,13 +207,13 @@ function synthesizePcmFrame(output: Float32Array): boolean {
           (sampleVal + wave.harmonicMix * Math.sin(wave.phase * 2)) / (1 + wave.harmonicMix);
       }
 
-      sampleSum += sampleVal * env * wave.intensity * 1.25;
+      sampleSum += sampleVal * env * wave.intensity;
     }
 
-    // Clamp to [-1.0, 1.0] without attenuating single-wave peaks
-    const clamped = Math.max(-1.0, Math.min(1.0, sampleSum));
-    output[frame * 2] = clamped;
-    output[frame * 2 + 1] = clamped;
+    // Master soft limiter
+    const limited = Math.tanh(sampleSum);
+    output[frame * 2] = limited;
+    output[frame * 2 + 1] = limited;
   }
 
   // Advance elapsed time for active waveforms by exact 21.333333 ms report interval
@@ -217,10 +227,7 @@ function synthesizePcmFrame(output: Float32Array): boolean {
   return hasSignal;
 }
 
-// --- HD Haptics Block Generation ---
-// IMPORTANT: Always keep block headers at 0xD2 (Tag 0x12 active haptic stream) even during
-// silence (0x00 samples). Switching to 0xD0 (Tag 0x10) immediately after a 1-2 packet effect
-// stops the DualSense's internal 0x12 hardware FIFO from clocking the pulse through the DAC!
+// --- HD Haptics Block Generation (from ulti/dualsense-bluetooth-audio-haptics-demo) ---
 function fillHapticBlocks(report: Uint8Array, pcmFrame: Float32Array | null): number {
   if (!pcmFrame) {
     report[10] = 0xd2;
@@ -327,13 +334,9 @@ function stopAudioSendLoop(): void {
 
 function scheduleAudioSendTick(): void {
   if (!isAudioLoopRunning) return;
-  const now = performance.now();
   nextAudioSendTime += AUDIO_INTERVAL_MS;
-  // Prevent burst catch-up if OS timer or Bluetooth I/O momentarily lagged
-  if (nextAudioSendTime < now) {
-    nextAudioSendTime = now + AUDIO_INTERVAL_MS * 0.5;
-  }
-  const delay = Math.max(1, nextAudioSendTime - now);
+  const now = performance.now();
+  const delay = Math.max(0, nextAudioSendTime - now);
   audioTimerHandle = self.setTimeout(sendAudioReportTick, delay);
 }
 
@@ -341,20 +344,17 @@ async function sendAudioReportTick(): Promise<void> {
   if (!isAudioLoopRunning) return;
 
   if (hidDevice && hidDevice.opened) {
-    buildAudioReport();
+    const frameEnergy = buildAudioReport();
     try {
       await hidDevice.sendReport(AUDIO_REPORT_ID, audioReportPayload as any);
     } catch (err) {
       // Ignore transient Bluetooth report errors
     }
 
-    // Only send periodic state keepalive when no haptic waveform is actively playing
+    // Interleaved State Report (keeps audio/haptic configuration & LPF active)
     const now = performance.now();
-    if (
-      activeWaves.length === 0 &&
-      now - lastStateReportTimestamp > STATE_KEEPALIVE_INTERVAL_MS
-    ) {
-      buildStateReport();
+    if (now - lastStateReportTimestamp > STATE_HEARTBEAT_INTERVAL_MS) {
+      buildStateReport(frameEnergy);
       try {
         await hidDevice.sendReport(STATE_REPORT_ID, stateReportPayload as any);
       } catch (err) {
@@ -375,7 +375,7 @@ function enqueueWaveform(effect: string, intensity: number): void {
       activeWaves.push({
         effect: 'tick',
         frequency: 150,
-        durationMs: 42,
+        durationMs: 40,
         elapsedMs: 0,
         intensity: scaledAmp,
         phase: 0,
@@ -388,7 +388,7 @@ function enqueueWaveform(effect: string, intensity: number): void {
         frequency: 150,
         durationMs: 45,
         elapsedMs: 0,
-        intensity: scaledAmp * 0.55,
+        intensity: scaledAmp * 0.4,
         phase: 0,
         type: 'sine'
       });
@@ -410,7 +410,7 @@ function enqueueWaveform(effect: string, intensity: number): void {
         effect: 'align',
         frequency: 220,
         sweepEnd: 130,
-        durationMs: 42,
+        durationMs: 35,
         elapsedMs: 0,
         intensity: scaledAmp,
         phase: 0,
@@ -479,7 +479,7 @@ self.onmessage = async (e: MessageEvent) => {
 
       // Initial state handshake burst (matches ulti/dualsense-bluetooth-audio-haptics-demo)
       for (let i = 0; i < 6; i++) {
-        buildStateReport();
+        buildStateReport(0);
         try {
           await hidDevice.sendReport(STATE_REPORT_ID, stateReportPayload as any);
         } catch (err) {
