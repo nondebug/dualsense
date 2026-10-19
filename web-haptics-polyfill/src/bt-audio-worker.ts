@@ -15,19 +15,22 @@ const STATE_REPORT_LENGTH = 142;
 const CHANNELS = 2;
 const FRAMES_PER_OPUS_PACKET = 480;
 const SAMPLES_PER_OPUS_PACKET = FRAMES_PER_OPUS_PACKET * CHANNELS; // 960
-const TOTAL_PCM_FRAMES = FRAMES_PER_OPUS_PACKET * 2; // 960 stereo frames per 21.333ms report
-const SYNTH_SAMPLE_RATE = 45000; // 960 frames / 0.021333333s = 45,000 Hz
-const DT_SAMPLE = 1 / SYNTH_SAMPLE_RATE;
 
 // Exact 21.333333 ms interval (1024 samples @ 48 kHz = 2 haptic blocks of 10.6667 ms each)
 const AUDIO_INTERVAL_MS = 21.333333;
 const STATE_HEARTBEAT_INTERVAL_MS = 250;
 
-const audioReportBuffer = new Uint8Array(FULL_REPORT_LENGTH);
 const stateReportBuffer = new Uint8Array(STATE_REPORT_LENGTH);
-const audioReportPayload = audioReportBuffer.subarray(1);
 const stateReportPayload = stateReportBuffer.subarray(1);
-const pcmStereoBuffer = new Float32Array(TOTAL_PCM_FRAMES * CHANNELS);
+const resampleOutputBuffer = new Float32Array(SAMPLES_PER_OPUS_PACKET * 2);
+
+// Ring buffer for timing jitter elimination (fed by 48 kHz AudioWorkletProcessor)
+const RING_CAPACITY = 4;
+const ringBuffers = Array.from({ length: RING_CAPACITY }, () => new Uint8Array(FULL_REPORT_LENGTH));
+const ringPayloads = ringBuffers.map((b) => b.subarray(1));
+let ringWriteIndex = 0;
+let ringReadIndex = 0;
+let ringCount = 0;
 
 // Pre-built 200-byte silent CBR Opus packet (TOC 0xFC: Fullband stereo 10ms CELT + DTX silence)
 const SILENT_OPUS_FRAME = new Uint8Array(200);
@@ -36,28 +39,15 @@ SILENT_OPUS_FRAME[1] = 0xff;
 SILENT_OPUS_FRAME[2] = 0xfe;
 
 let hidDevice: HIDDevice | null = null;
+let audioPort: MessagePort | null = null;
 let isAudioLoopRunning = false;
 let audioTimerHandle: number | null = null;
 let nextAudioSendTime = 0;
 let lastStateReportTimestamp = 0;
+let lastFrameEnergy = 0;
 
 let packetCounter = 0;
 let sequenceCounter = 0;
-
-interface ActiveWaveform {
-  effect: string;
-  frequency: number;
-  sweepEnd?: number;
-  harmonicMix?: number;
-  durationMs: number;
-  elapsedMs: number;
-  intensity: number;
-  phase: number;
-  type: 'sine' | 'harmonic' | 'sweep' | 'burst' | 'double-pulse';
-  burstCadence?: number;
-}
-
-const activeWaves: ActiveWaveform[] = [];
 
 // --- Sony DualSense CRC32 Implementation (from ulti/dualsense-bluetooth-audio-haptics-demo) ---
 const CRC32_TABLE = new Uint32Array(256);
@@ -100,6 +90,30 @@ function isDualSenseBluetooth(device: HIDDevice): boolean {
         c.outputReports?.some((r: any) => r.reportId === AUDIO_REPORT_ID)
     )
   );
+}
+
+function resampleStereoLinear(
+  input: Float32Array,
+  inputFrames: number,
+  output: Float32Array,
+  outputFrames: number
+): void {
+  const step = inputFrames / outputFrames;
+  for (let outputFrame = 0; outputFrame < outputFrames; outputFrame++) {
+    const sourcePosition = outputFrame * step;
+    const sourceFrame = Math.floor(sourcePosition);
+    const fraction = sourcePosition - sourceFrame;
+    const nextFrame = Math.min(sourceFrame + 1, inputFrames - 1);
+
+    const sourceOffset = sourceFrame * 2;
+    const nextOffset = nextFrame * 2;
+    const outputOffset = outputFrame * 2;
+
+    output[outputOffset] =
+      input[sourceOffset] + (input[nextOffset] - input[sourceOffset]) * fraction;
+    output[outputOffset + 1] =
+      input[sourceOffset + 1] + (input[nextOffset + 1] - input[sourceOffset + 1]) * fraction;
+  }
 }
 
 // --- State Report 0x32 (0x90, 0x3F) ---
@@ -145,86 +159,6 @@ function buildStateReport(energy = 0): void {
 
   fillSonyCrc(report);
   lastStateReportTimestamp = performance.now();
-}
-
-// --- Synthesize Active Haptic Effects into 960 Stereo Frames (21.333333 ms) ---
-function synthesizePcmFrame(output: Float32Array): boolean {
-  if (activeWaves.length === 0) {
-    output.fill(0);
-    return false;
-  }
-
-  let hasSignal = false;
-
-  for (let frame = 0; frame < TOTAL_PCM_FRAMES; frame++) {
-    const frameTimeMs = frame * DT_SAMPLE * 1000;
-    let sampleSum = 0;
-
-    for (const wave of activeWaves) {
-      const currentMs = wave.elapsedMs + frameTimeMs;
-      if (currentMs >= wave.durationMs) continue;
-
-      hasSignal = true;
-      const progress = Math.min(1, currentMs / wave.durationMs);
-
-      let freq = wave.frequency;
-      if (wave.type === 'sweep' && wave.sweepEnd !== undefined) {
-        freq = wave.frequency + (wave.sweepEnd - wave.frequency) * progress;
-      } else if (wave.type === 'double-pulse' && wave.sweepEnd !== undefined && currentMs >= 60) {
-        freq = wave.sweepEnd;
-      }
-
-      wave.phase += 2 * Math.PI * freq * DT_SAMPLE;
-      if (wave.phase > 2 * Math.PI) {
-        wave.phase -= 2 * Math.PI;
-      }
-
-      let env = 1.0;
-      if (wave.type === 'sine') {
-        const attack = Math.min(1, currentMs / 3);
-        env = attack * Math.exp(-progress * 3.5);
-      } else if (wave.type === 'harmonic') {
-        const attack = Math.min(1, currentMs / 4);
-        env = attack * Math.max(0, 1 - progress);
-      } else if (wave.type === 'sweep') {
-        env = Math.sin(progress * Math.PI);
-      } else if (wave.type === 'burst') {
-        const inBurst = currentMs % 45 < (wave.burstCadence ?? 25);
-        env = inBurst ? 1.0 : 0.0;
-      } else if (wave.type === 'double-pulse') {
-        if (currentMs < 35) {
-          env = Math.sin((currentMs / 35) * Math.PI);
-        } else if (currentMs >= 60 && currentMs < 120) {
-          env = Math.sin(((currentMs - 60) / 60) * Math.PI);
-        } else {
-          env = 0.0;
-        }
-      }
-
-      let sampleVal = Math.sin(wave.phase);
-      if (wave.type === 'harmonic' && wave.harmonicMix) {
-        sampleVal =
-          (sampleVal + wave.harmonicMix * Math.sin(wave.phase * 2)) / (1 + wave.harmonicMix);
-      }
-
-      sampleSum += sampleVal * env * wave.intensity;
-    }
-
-    // Master soft limiter
-    const limited = Math.tanh(sampleSum);
-    output[frame * 2] = limited;
-    output[frame * 2 + 1] = limited;
-  }
-
-  // Advance elapsed time for active waveforms by exact 21.333333 ms report interval
-  for (let w = activeWaves.length - 1; w >= 0; w--) {
-    activeWaves[w].elapsedMs += AUDIO_INTERVAL_MS;
-    if (activeWaves[w].elapsedMs >= activeWaves[w].durationMs) {
-      activeWaves.splice(w, 1);
-    }
-  }
-
-  return hasSignal;
 }
 
 // --- HD Haptics Block Generation ---
@@ -274,11 +208,10 @@ function fillHapticBlocks(report: Uint8Array, pcmFrame: Float32Array | null): nu
   return energy;
 }
 
-function buildAudioReport(): number {
-  const report = audioReportBuffer;
+function buildAudioReportIntoSlot(slotIndex: number, pcmFrame: Float32Array): void {
+  const report = ringBuffers[slotIndex];
 
   report[0] = AUDIO_REPORT_ID;
-  report[1] = getNextSequenceByte();
   report[2] = 0x91;
   report[3] = 0x06;
   report[4] = 0x7e;
@@ -288,20 +221,13 @@ function buildAudioReport(): number {
   report[7] = 64;
   report[8] = 64;
 
-  packetCounter = (packetCounter + 2) & 0xff;
-  report[9] = packetCounter;
-
-  const hasSignal = synthesizePcmFrame(pcmStereoBuffer);
-  const frameEnergy = fillHapticBlocks(report, hasSignal ? pcmStereoBuffer : null);
+  lastFrameEnergy = fillHapticBlocks(report, pcmFrame);
 
   // Opus packet framing (muted speaker target 0x13 | 0xC0 = 0xD3)
   report[140] = 0x13 | 0xc0;
   report[141] = SILENT_OPUS_FRAME.length;
   report.set(SILENT_OPUS_FRAME, 142);
   report.set(SILENT_OPUS_FRAME, 342);
-
-  fillSonyCrc(report);
-  return frameEnergy;
 }
 
 // --- Drift-Compensated 21.333333 ms Send Loop ---
@@ -318,6 +244,9 @@ function stopAudioSendLoop(): void {
     clearTimeout(audioTimerHandle);
     audioTimerHandle = null;
   }
+  ringCount = 0;
+  ringReadIndex = 0;
+  ringWriteIndex = 0;
 }
 
 function scheduleAudioSendTick(): void {
@@ -331,10 +260,22 @@ function scheduleAudioSendTick(): void {
 async function sendAudioReportTick(): Promise<void> {
   if (!isAudioLoopRunning) return;
 
-  if (hidDevice && hidDevice.opened) {
-    const frameEnergy = buildAudioReport();
+  if (hidDevice && hidDevice.opened && ringCount > 0) {
+    const slot = ringReadIndex;
+    ringReadIndex = (ringReadIndex + 1) % RING_CAPACITY;
+    ringCount--;
+
+    const report = ringBuffers[slot];
+    const payload = ringPayloads[slot];
+
+    // Stamp sequence, packet counter, and CRC directly before sending
+    report[1] = getNextSequenceByte();
+    packetCounter = (packetCounter + 2) & 0xff;
+    report[9] = packetCounter;
+    fillSonyCrc(report);
+
     try {
-      await hidDevice.sendReport(AUDIO_REPORT_ID, audioReportPayload as any);
+      await hidDevice.sendReport(AUDIO_REPORT_ID, payload as any);
     } catch (err) {
       // Ignore transient Bluetooth report errors
     }
@@ -342,7 +283,7 @@ async function sendAudioReportTick(): Promise<void> {
     // Interleaved State Report (keeps audio/haptic configuration & LPF active)
     const now = performance.now();
     if (now - lastStateReportTimestamp > STATE_HEARTBEAT_INTERVAL_MS) {
-      buildStateReport(frameEnergy);
+      buildStateReport(lastFrameEnergy);
       try {
         await hidDevice.sendReport(STATE_REPORT_ID, stateReportPayload as any);
       } catch (err) {
@@ -354,82 +295,43 @@ async function sendAudioReportTick(): Promise<void> {
   scheduleAudioSendTick();
 }
 
-function enqueueWaveform(effect: string, intensity: number): void {
-  // Stevens' Power law scaling
-  const scaledAmp = Math.pow(intensity, 1.5);
+function attachAudioPort(port: MessagePort): void {
+  audioPort = port;
+  audioPort.onmessage = (event: MessageEvent) => {
+    if (!hidDevice || !hidDevice.opened) {
+      if (event.data?.pcm?.buffer) {
+        audioPort?.postMessage({ action: 'recycle-buffer', buffer: event.data.pcm.buffer }, [
+          event.data.pcm.buffer
+        ]);
+      }
+      return;
+    }
 
-  switch (effect) {
-    case 'tick':
-      activeWaves.push({
-        effect: 'tick',
-        frequency: 150,
-        durationMs: 40,
-        elapsedMs: 0,
-        intensity: scaledAmp,
-        phase: 0,
-        type: 'sine'
-      });
-      break;
-    case 'hint':
-      activeWaves.push({
-        effect: 'hint',
-        frequency: 150,
-        durationMs: 45,
-        elapsedMs: 0,
-        intensity: scaledAmp * 0.4,
-        phase: 0,
-        type: 'sine'
-      });
-      break;
-    case 'edge':
-      activeWaves.push({
-        effect: 'edge',
-        frequency: 120,
-        durationMs: 70,
-        elapsedMs: 0,
-        intensity: scaledAmp,
-        phase: 0,
-        type: 'harmonic',
-        harmonicMix: 0.3
-      });
-      break;
-    case 'align':
-      activeWaves.push({
-        effect: 'align',
-        frequency: 220,
-        sweepEnd: 130,
-        durationMs: 35,
-        elapsedMs: 0,
-        intensity: scaledAmp,
-        phase: 0,
-        type: 'sweep'
-      });
-      break;
-    case 'success':
-      activeWaves.push({
-        effect: 'success',
-        frequency: 150,
-        sweepEnd: 220,
-        durationMs: 130,
-        elapsedMs: 0,
-        intensity: scaledAmp,
-        phase: 0,
-        type: 'double-pulse'
-      });
-      break;
-    case 'error':
-      activeWaves.push({
-        effect: 'error',
-        frequency: 95,
-        durationMs: 160,
-        elapsedMs: 0,
-        intensity: scaledAmp,
-        phase: 0,
-        type: 'burst',
-        burstCadence: 30
-      });
-      break;
-  }
+    const { pcm } = event.data;
+    if (!pcm) return;
+
+    resampleStereoLinear(pcm, 1024, resampleOutputBuffer, SAMPLES_PER_OPUS_PACKET);
+
+    if (ringCount < RING_CAPACITY) {
+      buildAudioReportIntoSlot(ringWriteIndex, resampleOutputBuffer);
+      ringWriteIndex = (ringWriteIndex + 1) % RING_CAPACITY;
+      ringCount++;
+    } else {
+      // Overwrite oldest slot if queue is full to prevent latency buildup
+      buildAudioReportIntoSlot(ringWriteIndex, resampleOutputBuffer);
+      ringWriteIndex = (ringWriteIndex + 1) % RING_CAPACITY;
+      ringReadIndex = (ringReadIndex + 1) % RING_CAPACITY;
+    }
+
+    // Start send loop once buffer is primed (at least 2 packets, matching ulti-demo)
+    if (!isAudioLoopRunning && ringCount >= 2) {
+      startAudioSendLoop();
+    }
+
+    if (pcm.buffer) {
+      audioPort?.postMessage({ action: 'recycle-buffer', buffer: pcm.buffer }, [pcm.buffer]);
+    }
+  };
 }
 
 self.onmessage = async (e: MessageEvent) => {
@@ -437,6 +339,9 @@ self.onmessage = async (e: MessageEvent) => {
 
   if (msg.type === 'init') {
     const match = msg.deviceMatch;
+    if (msg.port) {
+      attachAudioPort(msg.port);
+    }
     if (!navigator.hid) return;
     const devices = await navigator.hid.getDevices();
 
@@ -476,14 +381,9 @@ self.onmessage = async (e: MessageEvent) => {
         await new Promise((r) => setTimeout(r, 20));
       }
 
-      startAudioSendLoop();
-      console.log('DualSense Web Worker: 21.33ms dual-block BT audio haptics stream active');
+      console.log('DualSense Web Worker: Web Audio -> AudioWorklet -> BT stream initialized');
     }
-  } else if (msg.type === 'play') {
-    const { effect, intensity } = msg;
-    enqueueWaveform(effect, Math.max(0, Math.min(1, intensity ?? 1)));
   } else if (msg.type === 'stop') {
-    activeWaves.length = 0;
     stopAudioSendLoop();
   }
 };
