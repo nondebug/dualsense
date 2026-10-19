@@ -227,63 +227,51 @@ function synthesizePcmFrame(output: Float32Array): boolean {
   return hasSignal;
 }
 
-// --- HD Haptics Block Generation (from ulti/dualsense-bluetooth-audio-haptics-demo) ---
+// --- HD Haptics Block Generation ---
 function fillHapticBlocks(report: Uint8Array, pcmFrame: Float32Array | null): number {
   if (!pcmFrame) {
     report[10] = 0xd2;
     report[11] = 64;
-    report.fill(0, 12, 74);
-    report[74] = 0xd2;
-    report[75] = 64;
-    report.fill(0, 76, 138);
+    report.fill(0, 12, 140);
     return 0;
   }
 
   const pcm = pcmFrame;
   const totalInputFrames = pcm.length / 2;
-  const windowSize = SAMPLES_PER_OPUS_PACKET / 62;
+  const windowSize = SAMPLES_PER_OPUS_PACKET / 64;
 
-  function populateBlock(
-    blockHeaderOffset: number,
-    dataHeaderOffset: number,
-    startIndex: number
-  ): number {
-    report[blockHeaderOffset] = 0xd2;
-    report[blockHeaderOffset + 1] = 64;
+  report[10] = 0xd2;
+  report[11] = 64;
 
-    let energy = 0;
-    for (let i = 0; i < 31; i++) {
-      const pairIndex = startIndex + i;
-      const windowStart = Math.floor(pairIndex * windowSize);
-      const windowEnd = Math.min(Math.floor((pairIndex + 1) * windowSize), totalInputFrames);
+  let energy = 0;
+  for (let i = 0; i < 64; i++) {
+    const windowStart = Math.floor(i * windowSize);
+    const windowEnd = Math.min(Math.floor((i + 1) * windowSize), totalInputFrames);
 
-      let peakLeft = 0;
-      let peakRight = 0;
+    let peakLeft = 0;
+    let peakRight = 0;
 
-      for (let f = windowStart; f < windowEnd; f++) {
-        const lVal = pcm[f * 2];
-        const rVal = pcm[f * 2 + 1];
+    for (let f = windowStart; f < windowEnd; f++) {
+      const lVal = pcm[f * 2];
+      const rVal = pcm[f * 2 + 1];
 
-        if (Math.abs(lVal) > Math.abs(peakLeft)) peakLeft = lVal;
-        if (Math.abs(rVal) > Math.abs(peakRight)) peakRight = rVal;
-      }
-
-      if (Math.abs(peakLeft) < 0.005) peakLeft = 0;
-      if (Math.abs(peakRight) < 0.005) peakRight = 0;
-      if (peakLeft > 1.0) peakLeft = 1.0;
-      if (peakLeft < -1.0) peakLeft = -1.0;
-      if (peakRight > 1.0) peakRight = 1.0;
-      if (peakRight < -1.0) peakRight = -1.0;
-
-      energy += peakLeft * peakLeft + peakRight * peakRight;
-      report[dataHeaderOffset + i * 2] = Math.round(peakLeft * 127.0) & 0xff;
-      report[dataHeaderOffset + i * 2 + 1] = Math.round(peakRight * 127.0) & 0xff;
+      if (Math.abs(lVal) > Math.abs(peakLeft)) peakLeft = lVal;
+      if (Math.abs(rVal) > Math.abs(peakRight)) peakRight = rVal;
     }
 
-    return energy;
+    if (Math.abs(peakLeft) < 0.005) peakLeft = 0;
+    if (Math.abs(peakRight) < 0.005) peakRight = 0;
+    if (peakLeft > 1.0) peakLeft = 1.0;
+    if (peakLeft < -1.0) peakLeft = -1.0;
+    if (peakRight > 1.0) peakRight = 1.0;
+    if (peakRight < -1.0) peakRight = -1.0;
+
+    energy += peakLeft * peakLeft + peakRight * peakRight;
+    report[12 + i * 2] = Math.round(peakLeft * 127.0) & 0xff;
+    report[12 + i * 2 + 1] = Math.round(peakRight * 127.0) & 0xff;
   }
 
-  return populateBlock(10, 12, 0) + populateBlock(74, 76, 31);
+  return energy;
 }
 
 function buildAudioReport(): number {
